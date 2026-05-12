@@ -1,3 +1,37 @@
-# Godot 4+ specific ignores
+# ===== Godot 引擎 =====
+# 导入缓存（每台机器自动生成）
 .godot/
-/android/
+.import/
+
+# 临时/备份文件
+*.tmp
+*~
+
+# ===== Godot 插件（MCP工具，不推到远程） =====
+addons/godot_mcp/
+
+# ===== 构建产物 =====
+# 打包的可执行文件（太大，不入库）
+build/
+*.exe
+*.pck
+*.zip
+
+# ===== 系统/编辑器 =====
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# ===== Python 临时（脚本工具） =====
+__pycache__/
+*.pyc
+
+# ===== CodeBuddy 本地缓存（保留 agents/rules/skills 等仓库内容） =====
+.codebuddy/hooks/
+.codebuddy/templates/
+.codebuddy/settings.json
+
+# ===== 日志 =====
+*.log

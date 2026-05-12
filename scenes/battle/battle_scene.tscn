@@ -1,0 +1,249 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle/battle_scene.gd" id="1_battle"]
+[ext_resource type="Script" path="res://scripts/battle/battle_manager.gd" id="2_bm"]
+[ext_resource type="PackedScene" path="res://scenes/battle/battle_3d_bg.tscn" id="3_bg"]
+[ext_resource type="Script" path="res://scripts/ui/reward_screen.gd" id="4_reward"]
+[ext_resource type="Script" path="res://scripts/ui/hand_display.gd" id="5_hand"]
+[ext_resource type="Script" path="res://scripts/ui/intent_display.gd" id="6_intent"]
+[ext_resource type="Script" path="res://scripts/ui/combatant_panel.gd" id="7_panel"]
+[ext_resource type="Script" path="res://scripts/ui/battle_effects.gd" id="8_fx"]
+
+[node name="BattleScene" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_battle")
+
+[node name="BattleManager" type="Node" parent="."]
+script = ExtResource("2_bm")
+
+[node name="Background3D" type="SubViewportContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+stretch = true
+mouse_filter = 2
+
+[node name="SubViewport" type="SubViewport" parent="Background3D"]
+size = Vector2i(1920, 1080)
+render_target_update_mode = 4
+
+[node name="Scene" parent="Background3D/SubViewport" instance=ExtResource("3_bg")]
+
+[node name="UI" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="UIRoot" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="TurnLabel" type="Label" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -60.0
+offset_top = 12.0
+offset_right = 60.0
+offset_bottom = 42.0
+text = "回合 1"
+horizontal_alignment = 1
+
+[node name="BossPanel" type="PanelContainer" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -360.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 270.0
+script = ExtResource("7_panel")
+combatant_name = "回响"
+is_boss = true
+
+[node name="PlayerPanel" type="PanelContainer" parent="UI/UIRoot"]
+layout_mode = 1
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 360.0
+offset_bottom = 270.0
+script = ExtResource("7_panel")
+combatant_name = "NULL"
+is_boss = false
+
+[node name="ConstraintBadge" type="Label" parent="UI/UIRoot/PlayerPanel"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -36.0
+offset_right = -12.0
+offset_bottom = -6.0
+text = "约束: 0"
+horizontal_alignment = 2
+
+[node name="HandDisplay" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = -310.0
+offset_right = 0.0
+offset_bottom = -20.0
+script = ExtResource("5_hand")
+
+[node name="ConstraintDisplay" type="HBoxContainer" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 30.0
+offset_top = -280.0
+offset_right = 360.0
+offset_bottom = -20.0
+alignment = 0
+
+[node name="EndTurnButton" type="Button" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -210.0
+offset_top = -110.0
+offset_right = -30.0
+offset_bottom = -40.0
+text = "结束回合"
+
+[node name="LogPanel" type="PanelContainer" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 420.0
+offset_right = 400.0
+offset_bottom = 740.0
+
+[node name="LogText" type="RichTextLabel" parent="UI/UIRoot/LogPanel"]
+layout_mode = 2
+bbcode_enabled = true
+scroll_following = true
+
+[node name="ViewBossDeckButton" type="Button" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -270.0
+offset_top = 260.0
+offset_right = -20.0
+offset_bottom = 300.0
+text = "查看 Boss 牌库"
+
+[node name="IntentDisplay" type="Control" parent="UI/UIRoot"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -360.0
+offset_top = 320.0
+offset_right = -20.0
+offset_bottom = 440.0
+script = ExtResource("6_intent")
+
+[node name="BossDeckPopup" type="PanelContainer" parent="UI/UIRoot"]
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_top = 50.0
+offset_right = 220.0
+offset_bottom = 450.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/UIRoot/BossDeckPopup"]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="UI/UIRoot/BossDeckPopup/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/UIRoot/BossDeckPopup/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "◆ Boss 牌库"
+
+[node name="CloseBtn" type="Button" parent="UI/UIRoot/BossDeckPopup/VBox/Header"]
+layout_mode = 2
+text = "✕"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="UI/UIRoot/BossDeckPopup"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DeckList" type="VBoxContainer" parent="UI/UIRoot/BossDeckPopup/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RewardScreen" type="Control" parent="UI/UIRoot"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("4_reward")
+
+[node name="Panel" type="PanelContainer" parent="UI/UIRoot/RewardScreen"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = -150.0
+offset_right = 320.0
+offset_bottom = 150.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/UIRoot/RewardScreen/Panel"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="UI/UIRoot/RewardScreen/Panel/VBox"]
+layout_mode = 2
+text = "选择奖励 (1/2)"
+horizontal_alignment = 1
+
+[node name="CardsContainer" type="HBoxContainer" parent="UI/UIRoot/RewardScreen/Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+alignment = 1
+
+[node name="SkipButton" type="Button" parent="UI/UIRoot/RewardScreen/Panel/VBox"]
+layout_mode = 2
+text = "跳过"
+
+[node name="BattleEffects" type="Node" parent="."]
+script = ExtResource("8_fx")
+
+[node name="FxLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2

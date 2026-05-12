@@ -1,0 +1,367 @@
+[gd_scene format=3 uid="uid://o7nkktxvrdod"]
+
+[ext_resource type="Script" uid="uid://cdjuq3eb8sngc" path="res://scripts/battle/blind_clash_scene.gd" id="1"]
+[ext_resource type="Script" uid="uid://dkip20ed0tanr" path="res://scripts/battle/blind_clash_battle.gd" id="2"]
+[ext_resource type="Script" uid="uid://cneoafmosautg" path="res://scripts/ui/blind_select_ui.gd" id="3"]
+[ext_resource type="Script" uid="uid://bysfggqpxgfc7" path="res://scripts/ui/trap_deploy_ui.gd" id="4"]
+[ext_resource type="Script" uid="uid://deptrqpit2yq6" path="res://scripts/ui/clash_display_ui.gd" id="5"]
+[ext_resource type="Script" uid="uid://duka618g1bs6d" path="res://scripts/ui/probe_display_ui.gd" id="6"]
+[ext_resource type="Script" uid="uid://dx0kv53k0cgcs" path="res://scripts/ui/combatant_panel.gd" id="7"]
+[ext_resource type="Script" uid="uid://cri7rg5ifireb" path="res://scripts/ui/battle_effects.gd" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/battle/battle_3d_bg.tscn" id="9"]
+
+[node name="BlindClashScene" type="Control" unique_id=1033784407]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="BlindClashBattle" type="Node" parent="." unique_id=473084174]
+script = ExtResource("2")
+
+[node name="Background3D" type="SubViewportContainer" parent="." unique_id=910473753]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="Background3D" unique_id=1753311780]
+handle_input_locally = false
+size = Vector2i(1920, 1080)
+render_target_update_mode = 4
+
+[node name="Scene" parent="Background3D/SubViewport" unique_id=863362130 instance=ExtResource("9")]
+
+[node name="BattleEffects" type="Node" parent="." unique_id=1112650884]
+script = ExtResource("8")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=543032036]
+layer = 10
+
+[node name="UIRoot" type="Control" parent="UI" unique_id=474145528]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PlayerPanel" type="PanelContainer" parent="UI/UIRoot" unique_id=1758571146]
+layout_mode = 1
+offset_left = 1580.0
+offset_top = 800.0
+offset_right = 1900.0
+offset_bottom = 1040.0
+script = ExtResource("7")
+
+[node name="ConstraintPanel" type="PanelContainer" parent="UI/UIRoot" unique_id=760835351]
+layout_mode = 1
+offset_left = 20.0
+offset_top = 920.0
+offset_right = 240.0
+offset_bottom = 1060.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/UIRoot/ConstraintPanel" unique_id=1895032858]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/UIRoot/ConstraintPanel/VBox" unique_id=437152383]
+layout_mode = 2
+text = "约束点数"
+horizontal_alignment = 1
+
+[node name="ResourceCount" type="Label" parent="UI/UIRoot/ConstraintPanel/VBox" unique_id=1343595382]
+layout_mode = 2
+text = "◆ 0"
+horizontal_alignment = 1
+
+[node name="TrapCount" type="Label" parent="UI/UIRoot/ConstraintPanel/VBox" unique_id=1607206985]
+layout_mode = 2
+text = "剩余 0 张"
+horizontal_alignment = 1
+
+[node name="HandDisplay" type="Control" parent="UI/UIRoot" unique_id=1024859749]
+layout_mode = 1
+anchors_preset = 0
+offset_left = 360.0
+offset_top = 750.0
+offset_right = 1560.0
+offset_bottom = 1070.0
+mouse_filter = 1
+
+[node name="BossPanel" type="PanelContainer" parent="UI/UIRoot" unique_id=1884604148]
+layout_mode = 1
+offset_left = 1580.0
+offset_top = 20.0
+offset_right = 1900.0
+offset_bottom = 260.0
+script = ExtResource("7")
+
+[node name="RoundLabel" type="Label" parent="UI/UIRoot" unique_id=434573438]
+layout_mode = 1
+offset_left = 860.0
+offset_top = 10.0
+offset_right = 1060.0
+offset_bottom = 40.0
+text = "回合 1"
+horizontal_alignment = 1
+
+[node name="PhaseLabel" type="Label" parent="UI/UIRoot" unique_id=1186001566]
+layout_mode = 1
+offset_left = 820.0
+offset_top = 42.0
+offset_right = 1100.0
+offset_bottom = 72.0
+text = "等待中"
+horizontal_alignment = 1
+
+[node name="BossBlindCount" type="Label" parent="UI/UIRoot" unique_id=599252731]
+visible = false
+layout_mode = 1
+offset_left = 1580.0
+offset_top = 280.0
+offset_right = 1900.0
+offset_bottom = 310.0
+text = "Boss暗出: 0 张"
+horizontal_alignment = 1
+
+[node name="LogPanel" type="PanelContainer" parent="UI/UIRoot" unique_id=922974928]
+layout_mode = 1
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 400.0
+offset_bottom = 420.0
+
+[node name="LogText" type="RichTextLabel" parent="UI/UIRoot/LogPanel" unique_id=635682958]
+layout_mode = 2
+bbcode_enabled = true
+scroll_following = true
+
+[node name="TrapDeployUI" type="Control" parent="UI/UIRoot" unique_id=227541050]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4")
+
+[node name="VBox" type="VBoxContainer" parent="UI/UIRoot/TrapDeployUI" unique_id=802035617]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 200.0
+offset_top = 300.0
+offset_right = -200.0
+offset_bottom = -200.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="InfoBar" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=1191792346]
+layout_mode = 2
+
+[node name="ResourceLabel" type="Label" parent="UI/UIRoot/TrapDeployUI/VBox/InfoBar" unique_id=1638183734]
+layout_mode = 2
+text = "约束资源: 0"
+
+[node name="JamBtn" type="Button" parent="UI/UIRoot/TrapDeployUI/VBox/InfoBar" unique_id=1179473345]
+layout_mode = 2
+text = "干扰探针 (1)"
+
+[node name="ConfirmBtn" type="Button" parent="UI/UIRoot/TrapDeployUI/VBox/InfoBar" unique_id=1159164120]
+layout_mode = 2
+text = "确认部署"
+
+[node name="SlotsArea" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=802460480]
+layout_mode = 2
+
+[node name="TrapsArea" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=755481096]
+layout_mode = 2
+
+[node name="BlindSelectUI" type="Control" parent="UI/UIRoot" unique_id=443786484]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3")
+
+[node name="VBox" type="VBoxContainer" parent="UI/UIRoot/BlindSelectUI" unique_id=1326377489]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 50.0
+offset_top = -620.0
+offset_right = -350.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="BlindArea" type="HBoxContainer" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=76354968]
+custom_minimum_size = Vector2(0, 240)
+layout_mode = 2
+
+[node name="HandArea" type="Control" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=452631020]
+custom_minimum_size = Vector2(0, 320)
+layout_mode = 2
+mouse_filter = 1
+
+[node name="InfoBar" type="HBoxContainer" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=2040201574]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+
+[node name="InfoLabel" type="Label" parent="UI/UIRoot/BlindSelectUI/VBox/InfoBar" unique_id=940814018]
+layout_mode = 2
+text = "暗出 0 张牌"
+
+[node name="EnergyLabel" type="Label" parent="UI/UIRoot/BlindSelectUI/VBox/InfoBar" unique_id=485148458]
+layout_mode = 2
+text = "能量: 3/3"
+
+[node name="ClearBtn" type="Button" parent="UI/UIRoot/BlindSelectUI/VBox/InfoBar" unique_id=501989774]
+layout_mode = 2
+text = "清空"
+
+[node name="ConfirmBtn" type="Button" parent="UI/UIRoot/BlindSelectUI/VBox/InfoBar" unique_id=2082340096]
+layout_mode = 2
+text = "确认暗出"
+
+[node name="ClashDisplayUI" type="Control" parent="UI/UIRoot" unique_id=205237413]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("5")
+
+[node name="TopBar" type="HBoxContainer" parent="UI/UIRoot/ClashDisplayUI" unique_id=1349007834]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -100.0
+offset_top = 100.0
+offset_right = 100.0
+offset_bottom = 130.0
+grow_horizontal = 2
+
+[node name="PairCounter" type="Label" parent="UI/UIRoot/ClashDisplayUI/TopBar" unique_id=1577557482]
+layout_mode = 2
+text = "第 1/3 对"
+horizontal_alignment = 1
+
+[node name="HBox" type="HBoxContainer" parent="UI/UIRoot/ClashDisplayUI" unique_id=1620052899]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -450.0
+offset_top = -150.0
+offset_right = 450.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PlayerSide" type="VBoxContainer" parent="UI/UIRoot/ClashDisplayUI/HBox" unique_id=177837887]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CardSlot" type="Control" parent="UI/UIRoot/ClashDisplayUI/HBox/PlayerSide" unique_id=1443713944]
+custom_minimum_size = Vector2(200, 280)
+layout_mode = 2
+
+[node name="MultLabel" type="Label" parent="UI/UIRoot/ClashDisplayUI/HBox/PlayerSide" unique_id=940842049]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="Center" type="VBoxContainer" parent="UI/UIRoot/ClashDisplayUI/HBox" unique_id=310275575]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+alignment = 1
+
+[node name="VersusLabel" type="Label" parent="UI/UIRoot/ClashDisplayUI/HBox/Center" unique_id=253792306]
+layout_mode = 2
+text = "VS"
+horizontal_alignment = 1
+
+[node name="ResultLabel" type="RichTextLabel" parent="UI/UIRoot/ClashDisplayUI/HBox/Center" unique_id=2127272118]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+bbcode_enabled = true
+
+[node name="BossSide" type="VBoxContainer" parent="UI/UIRoot/ClashDisplayUI/HBox" unique_id=1867996866]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CardSlot" type="Control" parent="UI/UIRoot/ClashDisplayUI/HBox/BossSide" unique_id=1130207101]
+custom_minimum_size = Vector2(200, 280)
+layout_mode = 2
+
+[node name="MultLabel" type="Label" parent="UI/UIRoot/ClashDisplayUI/HBox/BossSide" unique_id=1224352020]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="ProbeDisplayUI" type="Control" parent="UI/UIRoot" unique_id=73969496]
+visible = false
+layout_mode = 1
+anchors_preset = 0
+offset_left = 500.0
+offset_top = 80.0
+offset_right = 1420.0
+offset_bottom = 240.0
+script = ExtResource("6")
+
+[node name="VBox" type="VBoxContainer" parent="UI/UIRoot/ProbeDisplayUI" unique_id=523111243]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PredictionPanel" type="PanelContainer" parent="UI/UIRoot/ProbeDisplayUI/VBox" unique_id=2041669895]
+layout_mode = 2
+
+[node name="PredText" type="RichTextLabel" parent="UI/UIRoot/ProbeDisplayUI/VBox/PredictionPanel" unique_id=1128115725]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+
+[node name="InsightBar" type="HBoxContainer" parent="UI/UIRoot/ProbeDisplayUI/VBox" unique_id=1747785197]
+layout_mode = 2
+
+[node name="StreakLabel" type="Label" parent="UI/UIRoot/ProbeDisplayUI/VBox/InsightBar" unique_id=2087644741]
+layout_mode = 2
+text = "连续: 0"
+
+[node name="TotalLabel" type="Label" parent="UI/UIRoot/ProbeDisplayUI/VBox/InsightBar" unique_id=369821136]
+layout_mode = 2
+text = "累计: 0/5"
+
+[node name="StatusLabel" type="Label" parent="UI/UIRoot/ProbeDisplayUI/VBox" unique_id=1614773323]
+layout_mode = 2
+
+[node name="FxLayer" type="Control" parent="UI/UIRoot" unique_id=738286788]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2

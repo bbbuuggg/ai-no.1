@@ -1,0 +1,76 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle/battle_3d_scene.gd" id="1_3d"]
+[ext_resource type="Shader" path="res://assets/shaders/cyber_table.gdshader" id="2_table_shader"]
+[ext_resource type="Shader" path="res://assets/shaders/hologram.gdshader" id="3_holo_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_table"]
+shader = ExtResource("2_table_shader")
+shader_parameter/base_color = Color(0.02, 0.03, 0.05, 1)
+shader_parameter/line_color = Color(0, 0.8, 1, 1)
+shader_parameter/line_width = 0.012
+shader_parameter/grid_size = 2.0
+shader_parameter/pulse_speed = 1.5
+shader_parameter/glow_intensity = 2.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_holo"]
+render_priority = 1
+shader = ExtResource("3_holo_shader")
+shader_parameter/holo_color = Color(1, 0.4, 0, 0.7)
+shader_parameter/scan_speed = 3.0
+shader_parameter/scan_width = 0.05
+shader_parameter/glow_intensity = 3.0
+shader_parameter/flicker_intensity = 0.15
+shader_parameter/edge_glow = 2.0
+
+[node name="Battle3D" type="Node3D"]
+script = ExtResource("1_3d")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.9, 0.44, 0, -0.44, 0.9, 0, 2.8, 3.2)
+fov = 60.0
+
+[node name="TableSurface" type="CSGBox3D" parent="."]
+size = Vector3(8, 0.1, 5)
+material = SubResource("ShaderMaterial_table")
+
+[node name="TableEdgeLeft" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.15, 0)
+size = Vector3(0.05, 0.3, 5)
+material = SubResource("ShaderMaterial_table")
+
+[node name="TableEdgeRight" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0.15, 0)
+size = Vector3(0.05, 0.3, 5)
+material = SubResource("ShaderMaterial_table")
+
+[node name="TableEdgeFar" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, -2.5)
+size = Vector3(8, 0.3, 0.05)
+material = SubResource("ShaderMaterial_table")
+
+[node name="BossHologram" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -1)
+
+[node name="InnerShape" type="CSGBox3D" parent="BossHologram"]
+size = Vector3(0.8, 0.8, 0.8)
+material = SubResource("ShaderMaterial_holo")
+
+[node name="OuterRing" type="CSGTorus3D" parent="BossHologram"]
+inner_radius = 0.9
+outer_radius = 1.0
+ring_sides = 32
+sides = 6
+material = SubResource("ShaderMaterial_holo")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+[node name="AmbientLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707, 0.707, 0, -0.707, 0.707, 0, 5, 0)
+light_color = Color(0.3, 0.4, 0.6, 1)
+light_energy = 0.3
+
+[node name="BossLight" type="OmniLight3D" parent="BossHologram"]
+light_color = Color(1, 0.4, 0, 1)
+light_energy = 2.0
+omni_range = 3.0
