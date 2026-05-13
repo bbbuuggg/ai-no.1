@@ -285,10 +285,8 @@ func _on_constraint_button_pressed(constraint: ConstraintData) -> void:
 func _update_constraint_buttons() -> void:
 	for child in constraint_display.get_children():
 		child.queue_free()
-	var ConstraintCardUI := preload("res://scripts/ui/constraint_card_ui.gd")
 	for constraint in battle_manager.constraints_inventory:
-		var card_ui := Control.new()
-		card_ui.set_script(ConstraintCardUI)
+		var card_ui := ConstraintCardUI.new()
 		card_ui.setup(constraint, constraint.resource_cost <= battle_manager.constraint_resource)
 		card_ui.constraint_clicked.connect(_on_constraint_button_pressed)
 		constraint_display.add_child(card_ui)
@@ -360,7 +358,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed:
 		match event.keycode:
-			KEY_F1:
+			KEY_F12:
 				battle_manager.debug_kill_boss()
 				_add_log("[DEBUG] Boss 秒杀")
 			KEY_F4:

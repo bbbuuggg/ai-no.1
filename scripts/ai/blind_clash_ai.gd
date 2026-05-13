@@ -34,7 +34,7 @@ func select_blind_cards(boss: Combatant, player: Combatant, trap_slots: Array, _
 	# 4. 打分排序
 	var scored: Array[Dictionary] = []
 	for card in trap_aware_cards:
-		var score: float = _score_card(card, boss, player, stance)
+		var score: float = _score_card(card, boss, player, stance, trap_slots)
 		scored.append({"card": card, "score": score})
 	scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return a["score"] > b["score"]
@@ -55,6 +55,44 @@ func select_blind_cards(boss: Combatant, player: Combatant, trap_slots: Array, _
 		boss.hand.erase(card)
 	boss.hand_changed.emit()
 
+	return selected
+
+
+## 纯读取版：返回规则 AI 会选的牌，但**不**从 boss.hand 中移除
+## 供 LLMBossAI 作为"建议参考"时调用
+func preview_blind_cards(boss: Combatant, player: Combatant, trap_slots: Array, _probe: CognitiveProbe) -> Array[CardData]:
+	var selected: Array[CardData] = []
+	var remaining_energy: int = boss.energy
+
+	var playable: Array[CardData] = []
+	for card in boss.hand:
+		if card.energy_cost <= remaining_energy and card.energy_cost > 0:
+			playable.append(card)
+		elif card.energy_cost == 0:
+			playable.append(card)
+
+	if playable.is_empty():
+		return []
+
+	var stance: String = _evaluate_stance(boss, player)
+	var trap_aware_cards: Array[CardData] = _filter_by_trap_awareness(playable, trap_slots)
+
+	var scored: Array[Dictionary] = []
+	for card in trap_aware_cards:
+		var score: float = _score_card(card, boss, player, stance, trap_slots)
+		scored.append({"card": card, "score": score})
+	scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["score"] > b["score"]
+	)
+
+	for entry in scored:
+		var card: CardData = entry["card"]
+		if card.energy_cost <= remaining_energy:
+			selected.append(card)
+			remaining_energy -= card.energy_cost
+
+	selected = _arrange_order(selected, stance)
+	# **不**修改 boss.hand，这是 preview 的关键
 	return selected
 
 
@@ -83,6 +121,9 @@ func _evaluate_stance(boss: Combatant, player: Combatant) -> String:
 
 func _filter_by_trap_awareness(cards: Array[CardData], trap_slots: Array) -> Array[CardData]:
 	## 根据陷阱槽位情况过滤/降权牌
+	##
+	## 【关键】Boss 只知道"哪个槽位有占位"，不知道真假（诱饵 is_bluff 对 Boss 不可见）。
+	## 这是诱饵牌生效的前提 —— 它与真陷阱对 AI 决策的影响完全相同。
 	var result: Array[CardData] = []
 
 	for card in cards:
@@ -102,6 +143,46 @@ func _filter_by_trap_awareness(cards: Array[CardData], trap_slots: Array) -> Arr
 	return result
 
 
+## 计算陷阱威慑因子（供 _score_card 使用）
+## 占位槽越多、牌能量越高/伤害越高，威慑越强
+func _trap_deterrent_penalty(card: CardData, trap_slots: Array) -> float:
+	var occupied_count: int = 0
+	for slot in trap_slots:
+		if slot != null:
+			occupied_count += 1
+	if occupied_count == 0:
+		return 0.0
+
+	var trigger_slot: int = _card_triggers_slot(card)
+	# 若该牌不会触发任何槽位（理论上每张牌都会至少触发一个，保守兜底）
+	if trigger_slot < 0:
+		return 0.0
+	# 该牌对应槽位是否被占？若被占，最大威慑；若未被占但别处有，小威慑（间接不安）
+	var slot_is_occupied: bool = trap_slots[trigger_slot] != null
+
+	var penalty: float = 0.0
+	if slot_is_occupied:
+		# 高能量牌（≥3）损失最大，被打断一次几乎等于空一回合
+		if card.energy_cost >= 3:
+			penalty += 15.0
+		elif card.energy_cost >= 2:
+			penalty += 8.0
+		else:
+			penalty += 3.0
+		# 高伤害牌（怕反弹 / 怕被虹吸）
+		if card.damage >= 6:
+			penalty += 8.0
+		elif card.damage >= 3:
+			penalty += 3.0
+	else:
+		# 对应槽位没被占，但 Boss 整体警觉度略升（看到陷阱氛围紧张）
+		penalty += 1.5 * float(occupied_count)
+
+	# 冒险倾向：risk_tolerance 越高越无视威慑
+	penalty *= (1.0 - risk_tolerance * 0.6)
+	return penalty
+
+
 func _card_triggers_slot(card: CardData) -> int:
 	## 返回这张牌会触发哪个陷阱槽位（-1=无）
 	match card.type:
@@ -114,7 +195,7 @@ func _card_triggers_slot(card: CardData) -> int:
 	return -1
 
 
-func _score_card(card: CardData, boss: Combatant, player: Combatant, stance: String) -> float:
+func _score_card(card: CardData, boss: Combatant, player: Combatant, stance: String, trap_slots: Array = []) -> float:
 	var cost: float = maxf(card.energy_cost, 0.5)
 	var value: float = 0.0
 
@@ -154,6 +235,10 @@ func _score_card(card: CardData, boss: Combatant, player: Combatant, stance: Str
 	# 全攻击加成
 	if card.all_attack_bonus > 0:
 		value += card.all_attack_bonus * 3.0
+
+	# 【陷阱威慑扣分】 — 诱饵/真陷阱都在此生效（AI 无法区分）
+	if not trap_slots.is_empty():
+		value -= _trap_deterrent_penalty(card, trap_slots)
 
 	return value / cost
 

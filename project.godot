@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="NULL Protocol"
+config/name="Player"
 config/description="Roguelike Boss Rush 卡牌对战 — 人 vs AI"
 run/main_scene="res://scenes/battle/blind_clash_scene.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")

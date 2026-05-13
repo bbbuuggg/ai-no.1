@@ -1,0 +1,28 @@
+; LLM 开发期内置配置（原型阶段）
+;
+; ⚠️ 请把你的真实 API Key 填到下方对应 provider 的 api_key 字段
+; ⚠️ 此文件已加入 .gitignore，不会被提交
+;
+; 优先级链：环境变量 NULL_LLM_API_KEY > user://llm_config.cfg > 此文件 > mock
+;
+; ⚠️ max_tokens 字段已被 LLMConfig.MAX_TOKENS_OVERRIDE 强制覆盖（单一真源），
+;    在此修改不会生效。若要调整请改 scripts/ai/config/llm_config.gd 顶部的常量。
+
+[provider]
+active = "deepseek"
+
+[deepseek]
+api_key = ""
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+temperature = 0.7
+max_tokens = 2000  ; ← 已被 LLMConfig.MAX_TOKENS_OVERRIDE 覆盖，仅作历史记录
+timeout_sec = 30.0
+
+[openai]
+api_key = ""
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+temperature = 0.7
+max_tokens = 2000  ; ← 已被 LLMConfig.MAX_TOKENS_OVERRIDE 覆盖，仅作历史记录
+timeout_sec = 30.0

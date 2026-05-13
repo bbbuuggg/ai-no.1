@@ -9,6 +9,9 @@
 [ext_resource type="Script" uid="uid://dx0kv53k0cgcs" path="res://scripts/ui/combatant_panel.gd" id="7"]
 [ext_resource type="Script" uid="uid://cri7rg5ifireb" path="res://scripts/ui/battle_effects.gd" id="8"]
 [ext_resource type="PackedScene" path="res://scenes/battle/battle_3d_bg.tscn" id="9"]
+[ext_resource type="Script" uid="uid://bjgxy8vqg8wq6" path="res://scripts/ui/deck_view_ui.gd" id="10"]
+[ext_resource type="Script" uid="uid://bmdeiw7xrbtna" path="res://scripts/ui/rules_overlay_ui.gd" id="11"]
+[ext_resource type="Script" uid="uid://dpkbhcn0ltpq5" path="res://scripts/ui/boss_thinking_overlay.gd" id="12"]
 
 [node name="BlindClashScene" type="Control" unique_id=1033784407]
 layout_mode = 3
@@ -56,9 +59,9 @@ grow_vertical = 2
 [node name="PlayerPanel" type="PanelContainer" parent="UI/UIRoot" unique_id=1758571146]
 layout_mode = 1
 offset_left = 1580.0
-offset_top = 800.0
+offset_top = 400.0
 offset_right = 1900.0
-offset_bottom = 1040.0
+offset_bottom = 640.0
 script = ExtResource("7")
 
 [node name="ConstraintPanel" type="PanelContainer" parent="UI/UIRoot" unique_id=760835351]
@@ -144,29 +147,41 @@ bbcode_enabled = true
 scroll_following = true
 
 [node name="TrapDeployUI" type="Control" parent="UI/UIRoot" unique_id=227541050]
-visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 510.0
+offset_top = 242.0
+offset_right = -330.0
+offset_bottom = -238.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("4")
 
 [node name="VBox" type="VBoxContainer" parent="UI/UIRoot/TrapDeployUI" unique_id=802035617]
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 200.0
-offset_top = 300.0
-offset_right = -200.0
-offset_bottom = -200.0
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -540.0
+offset_top = -50.0
+offset_right = 360.0
+offset_bottom = 500.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="SlotsArea" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=802460480]
+layout_mode = 2
+
+[node name="TrapsArea" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=755481096]
+layout_mode = 2
+
 [node name="InfoBar" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=1191792346]
 layout_mode = 2
+alignment = 1
 
 [node name="ResourceLabel" type="Label" parent="UI/UIRoot/TrapDeployUI/VBox/InfoBar" unique_id=1638183734]
 layout_mode = 2
@@ -180,12 +195,6 @@ text = "干扰探针 (1)"
 layout_mode = 2
 text = "确认部署"
 
-[node name="SlotsArea" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=802460480]
-layout_mode = 2
-
-[node name="TrapsArea" type="HBoxContainer" parent="UI/UIRoot/TrapDeployUI/VBox" unique_id=755481096]
-layout_mode = 2
-
 [node name="BlindSelectUI" type="Control" parent="UI/UIRoot" unique_id=443786484]
 visible = false
 layout_mode = 1
@@ -198,28 +207,42 @@ script = ExtResource("3")
 
 [node name="VBox" type="VBoxContainer" parent="UI/UIRoot/BlindSelectUI" unique_id=1326377489]
 layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 50.0
-offset_top = -620.0
-offset_right = -350.0
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -700.0
+offset_top = -360.0
+offset_right = 700.0
+offset_bottom = 540.0
 grow_horizontal = 2
-grow_vertical = 0
+grow_vertical = 2
 
-[node name="BlindArea" type="HBoxContainer" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=76354968]
-custom_minimum_size = Vector2(0, 240)
+[node name="BlindArea" type="Control" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=76354968]
+clip_contents = true
+custom_minimum_size = Vector2(0, 400)
 layout_mode = 2
 
+[node name="BlindRow" type="HBoxContainer" parent="UI/UIRoot/BlindSelectUI/VBox/BlindArea" unique_id=1736354968]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
 [node name="HandArea" type="Control" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=452631020]
-custom_minimum_size = Vector2(0, 320)
+clip_contents = true
+custom_minimum_size = Vector2(0, 400)
 layout_mode = 2
 mouse_filter = 1
 
 [node name="InfoBar" type="HBoxContainer" parent="UI/UIRoot/BlindSelectUI/VBox" unique_id=2040201574]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
+alignment = 1
 
 [node name="InfoLabel" type="Label" parent="UI/UIRoot/BlindSelectUI/VBox/InfoBar" unique_id=940814018]
 layout_mode = 2
@@ -238,7 +261,6 @@ layout_mode = 2
 text = "确认暗出"
 
 [node name="ClashDisplayUI" type="Control" parent="UI/UIRoot" unique_id=205237413]
-visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -365,3 +387,76 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+
+[node name="QueryButtons" type="VBoxContainer" parent="UI/UIRoot" unique_id=2030110001]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -88.0
+offset_top = -240.0
+offset_right = -12.0
+offset_bottom = -24.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_constants/separation = 12
+
+[node name="PlayerDeckBtn" type="Button" parent="UI/UIRoot/QueryButtons" unique_id=2030110002]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "查看我方牌库 (Tab)"
+text = "🃏"
+
+[node name="BossDeckBtn" type="Button" parent="UI/UIRoot/QueryButtons" unique_id=2030110003]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "查看 Boss 牌库 (B)"
+text = "⚠"
+
+[node name="RulesBtn" type="Button" parent="UI/UIRoot/QueryButtons" unique_id=2030110004]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "规则介绍 (?)"
+text = "?"
+
+[node name="PlayerDeckView" type="Control" parent="UI" unique_id=2030110010]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("10")
+
+[node name="BossDeckView" type="Control" parent="UI" unique_id=2030110011]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("10")
+
+[node name="RulesOverlay" type="Control" parent="UI" unique_id=2030110012]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("11")
+
+[node name="BossThinkingOverlay" type="Control" parent="UI" unique_id=2030110013]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("12")

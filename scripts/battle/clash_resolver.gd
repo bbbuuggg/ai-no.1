@@ -11,6 +11,9 @@ class ClashResult:
 	var clash_type: String = ""  # "counter_player", "counter_boss", "neutral", "free_player", "free_boss"
 	var trap_triggered: bool = false
 	var trap_data: TrapData = null
+	# v0.4.3 hotfix-4：本对玩家牌的 0 费绑定牌（用于 UI 展示"绑定+X 抽牌效果"）。
+	# 由 BlindClashBattle.apply_clash_pair_at 在结算时填入。
+	var player_bound_zero: CardData = null
 
 
 ## 三角克制判定：返回 1=player克制, -1=boss克制, 0=中立/同类型
