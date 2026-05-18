@@ -1,0 +1,189 @@
+{
+  "name": "H_膨胀能量_R5_base10",
+  "scenario": "base_energy=10（R5），玩家锁高威胁fire；候选 3 费 water 强克 / 1 费 water 弱克 / 2 费 fire 中性。LLM 应读 self.base_energy 而非假设 6，并优先选克制色",
+  "expected": "b_3cost_counter",
+  "perception": {
+    "mode": "bp_slot_pick",
+    "self": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "energy": 10,
+      "base_energy": 10
+    },
+    "self_candidates": [
+      {
+        "index": 0,
+        "id": "b_3cost_counter",
+        "name": "3费高伤克",
+        "type": "atk",
+        "element": "water",
+        "polarity": "dark",
+        "cost": 3,
+        "dmg": 11,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 7,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_opponent_element": "fire",
+        "vs_opponent_multiplier": 1.5,
+        "vs_opponent_label": "你克 ×1.5"
+      },
+      {
+        "index": 1,
+        "id": "b_1cost_counter",
+        "name": "1费小克",
+        "type": "atk",
+        "element": "water",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 4,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 9,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_opponent_element": "fire",
+        "vs_opponent_multiplier": 1.5,
+        "vs_opponent_label": "你克 ×1.5"
+      },
+      {
+        "index": 2,
+        "id": "b_2cost_neutral",
+        "name": "2费同色",
+        "type": "atk",
+        "element": "fire",
+        "polarity": "dark",
+        "cost": 2,
+        "dmg": 7,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 8,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_opponent_element": "fire",
+        "vs_opponent_multiplier": 1.0,
+        "vs_opponent_label": "同色 ×1.0"
+      }
+    ],
+    "self_picks": [
+      {
+        "slot": 1,
+        "locked": false
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "player": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "energy": 10,
+      "hand_count": 4
+    },
+    "player_candidates": [
+      {
+        "index": 0,
+        "id": "p_lock",
+        "name": "玩家fire核心",
+        "type": "atk",
+        "element": "fire",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 8,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true
+      }
+    ],
+    "player_picks": [
+      {
+        "slot": 1,
+        "locked": true,
+        "id": "p_locked_1",
+        "name": "玩家slot1",
+        "type": "atk",
+        "element": "fire",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "current_slot_matchup": {
+      "slot": 1,
+      "opponent_locked": true,
+      "opponent_element": "fire",
+      "opponent_polarity": "light",
+      "opponent_id": "p_locked_1",
+      "opponent_name": "玩家slot1",
+      "note": "你的 slot 1 只与对手的 slot 1 对位结算"
+    },
+    "current_slot": 0,
+    "current_slot_human": 1,
+    "slot_leader": "boss",
+    "slot_leader_is_self": true,
+    "first_picker": "boss",
+    "slots_total": 4,
+    "slots_left_including_current": 4,
+    "energy_remaining": 10,
+    "avg_energy_budget_per_slot": 2,
+    "skip_is_legal": true,
+    "opponent_locked_threat": 8,
+    "rule_ai_suggestion": {
+      "cards": [],
+      "note": "无推荐"
+    },
+    "rules_summary": "克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×0.5同元素中立;⚠反向必错:不存在'水克木/木克火/火克水'",
+    "history": [],
+    "round": 1
+  },
+  "runs": [
+    {
+      "ok": true,
+      "card_id": "b_3cost_counter",
+      "reasoning": "对位slot1已锁fire;我slot1出水克fire×1.5,3费11伤×1.5=16.5期望高,留1费小克给后续slot。",
+      "raw_content": "{\n  \"reasoning\": \"对位slot1已锁fire;我slot1出水克fire×1.5,3费11伤×1.5=16.5期望高,留1费小克给后续slot。\",\n  \"card_id\": \"b_3cost_counter\"\n}",
+      "usage": {
+        "prompt_tokens": 7915,
+        "completion_tokens": 64,
+        "total_tokens": 7979,
+        "prompt_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "prompt_cache_hit_tokens": 6784,
+        "prompt_cache_miss_tokens": 1131
+      },
+      "reasoning_check": {
+        "wrong_patterns": [],
+        "right_patterns": []
+      }
+    }
+  ],
+  "majority_pick": "b_3cost_counter",
+  "passed": true
+}

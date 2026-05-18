@@ -1,0 +1,173 @@
+{
+  "run_id": "20260518_174546",
+  "timestamp": "2026-05-18T17:46:41.613280",
+  "model": "deepseek-chat",
+  "total": 19,
+  "passed": 19,
+  "runs_per_case": 1,
+  "by_category": {
+    "A": {
+      "passed": 3,
+      "total": 3
+    },
+    "B": {
+      "passed": 3,
+      "total": 3
+    },
+    "C": {
+      "passed": 3,
+      "total": 3
+    },
+    "D": {
+      "passed": 3,
+      "total": 3
+    },
+    "E": {
+      "passed": 3,
+      "total": 3
+    },
+    "F": {
+      "passed": 1,
+      "total": 1
+    },
+    "G": {
+      "passed": 3,
+      "total": 3
+    }
+  },
+  "details": [
+    {
+      "name": "A_基础_对手fire",
+      "scenario": "玩家 slot1 锁定 fire，候选 3 张元素齐全，应选克制色 water",
+      "expected": "b_test_water",
+      "majority_pick": "b_test_water",
+      "passed": true
+    },
+    {
+      "name": "A_基础_对手water",
+      "scenario": "玩家 slot1 锁定 water，候选 3 张元素齐全，应选克制色 wood",
+      "expected": "b_test_wood",
+      "majority_pick": "b_test_wood",
+      "passed": true
+    },
+    {
+      "name": "A_基础_对手wood",
+      "scenario": "玩家 slot1 锁定 wood，候选 3 张元素齐全，应选克制色 fire",
+      "expected": "b_test_fire",
+      "majority_pick": "b_test_fire",
+      "passed": true
+    },
+    {
+      "name": "B_Edge2张_对手fire",
+      "scenario": "候选只剩被克牌+克制牌，必选克制 water",
+      "expected": "b_good_water",
+      "majority_pick": "b_good_water",
+      "passed": true
+    },
+    {
+      "name": "B_Edge2张_对手water",
+      "scenario": "候选只剩被克牌+克制牌，必选克制 wood",
+      "expected": "b_good_wood",
+      "majority_pick": "b_good_wood",
+      "passed": true
+    },
+    {
+      "name": "B_Edge2张_对手wood",
+      "scenario": "候选只剩被克牌+克制牌，必选克制 fire",
+      "expected": "b_good_fire",
+      "majority_pick": "b_good_fire",
+      "passed": true
+    },
+    {
+      "name": "C_数值陷阱_对手fire",
+      "scenario": "末 slot 数值陷阱：低伤克 4×1.5=6  vs  高伤同色 10×1.0=10，应选高伤同色",
+      "expected": "b_high_same",
+      "majority_pick": "b_high_same",
+      "passed": true
+    },
+    {
+      "name": "C_数值陷阱_对手water",
+      "scenario": "末 slot 数值陷阱：低伤克 4×1.5=6  vs  高伤同色 10×1.0=10，应选高伤同色",
+      "expected": "b_high_same",
+      "majority_pick": "b_high_same",
+      "passed": true
+    },
+    {
+      "name": "C_数值陷阱_对手wood",
+      "scenario": "末 slot 数值陷阱：低伤克 4×1.5=6  vs  高伤同色 10×1.0=10，应选高伤同色",
+      "expected": "b_high_same",
+      "majority_pick": "b_high_same",
+      "passed": true
+    },
+    {
+      "name": "D_预判后续_对手未锁但候选全fire",
+      "scenario": "对位 slot1 未锁，玩家候选全 fire（确定性博弈）→ 应选克 water 或同色 fire（反预判）；不应选 wood（被克）",
+      "expected": "b_test_water",
+      "majority_pick": "b_test_fire",
+      "passed": true
+    },
+    {
+      "name": "D_预判后续_对手未锁但候选全water",
+      "scenario": "对位 slot1 未锁，玩家候选全 water（确定性博弈）→ 应选克 wood 或同色 water（反预判）；不应选 fire（被克）",
+      "expected": "b_test_wood",
+      "majority_pick": "b_test_wood",
+      "passed": true
+    },
+    {
+      "name": "D_预判后续_对手未锁但候选全wood",
+      "scenario": "对位 slot1 未锁，玩家候选全 wood（确定性博弈）→ 应选克 fire 或同色 wood（反预判）；不应选 water（被克）",
+      "expected": "b_test_fire",
+      "majority_pick": "b_test_fire",
+      "passed": true
+    },
+    {
+      "name": "E_反向幻觉_玩家近期出fire",
+      "scenario": "历史显示玩家近 2 回合多次出 fire，LLM 不应误推克制方向",
+      "expected": null,
+      "majority_pick": "b_test_water",
+      "passed": true
+    },
+    {
+      "name": "E_反向幻觉_玩家近期出water",
+      "scenario": "历史显示玩家近 2 回合多次出 water，LLM 不应误推克制方向",
+      "expected": null,
+      "majority_pick": "b_test_water",
+      "passed": true
+    },
+    {
+      "name": "E_反向幻觉_玩家近期出wood",
+      "scenario": "历史显示玩家近 2 回合多次出 wood，LLM 不应误推克制方向",
+      "expected": null,
+      "majority_pick": "b_test_water",
+      "passed": true
+    },
+    {
+      "name": "F_留空战术_候选全被克且对位威胁低",
+      "scenario": "候选 2 张木被 fire 克 ×0.5 + 1 张爆预算，对位 fire 威胁仅 3 → 应主动 skip",
+      "expected": "skip",
+      "majority_pick": "skip",
+      "passed": true
+    },
+    {
+      "name": "G_能量预算_对手fire",
+      "scenario": "slot1 选 4费爆预算后剩 2 能量给 3slot → 应选 1费克制保节奏",
+      "expected": "b_low_cost",
+      "majority_pick": "b_low_cost",
+      "passed": true
+    },
+    {
+      "name": "G_能量预算_对手water",
+      "scenario": "slot1 选 4费爆预算后剩 2 能量给 3slot → 应选 1费克制保节奏",
+      "expected": "b_low_cost",
+      "majority_pick": "b_low_cost",
+      "passed": true
+    },
+    {
+      "name": "G_能量预算_对手wood",
+      "scenario": "slot1 选 4费爆预算后剩 2 能量给 3slot → 应选 1费克制保节奏",
+      "expected": "b_low_cost",
+      "majority_pick": "b_low_cost",
+      "passed": true
+    }
+  ]
+}

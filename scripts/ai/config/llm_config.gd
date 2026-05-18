@@ -24,7 +24,7 @@ extends RefCounted
 ##   show_llm_reasoning = false
 ##   force_rule_ai = false
 ##   log_prompts = false
-##   log_path = "user://llm_log.txt"
+##   log_path = ""   ; 空 = 自动：导出版写 exe 同级目录、编辑器写 user://llm_log.txt
 
 const USER_CONFIG_PATH := "user://llm_config.cfg"
 const DEV_CONFIG_PATH := "res://config/llm_config.dev.cfg"
@@ -58,11 +58,26 @@ var temperature: float = 0.7
 var max_tokens: int = MAX_TOKENS_OVERRIDE
 var timeout_sec: float = 30.0
 
-# 调试开关
-var show_llm_reasoning: bool = false
-var force_rule_ai: bool = false
-var log_prompts: bool = false
-var log_path: String = "user://llm_log.txt"
+# ============================================================
+# 【调试开关默认值】—— 代码硬编码（不依赖任何 cfg 文件）
+# ============================================================
+# 这些是"出厂默认值"。任何 cfg（user 或 dev）都可以覆盖；
+# 但如果两份 cfg 都不存在，依然按这里的值生效 —— 这样打包给朋友
+# 试玩时，无需任何配置文件就能拿到完整 LLM 日志。
+const DEFAULT_SHOW_LLM_REASONING: bool = true
+const DEFAULT_FORCE_RULE_AI: bool = false
+const DEFAULT_LOG_PROMPTS: bool = true
+# log_path 默认值在 _resolve_log_path("") 里动态生成：
+#   编辑器  → user://llm_log.txt
+#   导出版  → exe 同级目录/llm_log.txt
+const DEFAULT_LOG_PATH: String = ""
+# ============================================================
+
+# 调试开关（运行时值，load() 中按 默认 → cfg 顺序填充）
+var show_llm_reasoning: bool = DEFAULT_SHOW_LLM_REASONING
+var force_rule_ai: bool = DEFAULT_FORCE_RULE_AI
+var log_prompts: bool = DEFAULT_LOG_PROMPTS
+var log_path: String = "user://llm_log.txt"  # 占位，load() 中会被 _resolve_log_path 覆盖
 
 # 来源标记（调试用）
 var key_source: String = "none"
@@ -106,12 +121,12 @@ func load() -> void:
 	else:
 		active_provider = "mock"
 
-	# 步骤 4: 调试开关从 user 读（玩家可控）
-	if has_user:
-		show_llm_reasoning = bool(user_cfg.get_value("debug", "show_llm_reasoning", false))
-		force_rule_ai = bool(user_cfg.get_value("debug", "force_rule_ai", false))
-		log_prompts = bool(user_cfg.get_value("debug", "log_prompts", false))
-		log_path = String(user_cfg.get_value("debug", "log_path", "user://llm_log.txt"))
+	# 步骤 4: 调试开关 —— 优先级：user cfg > dev cfg > 代码硬编码默认值。
+	# 即使两份 cfg 都不存在，也按 DEFAULT_* 常量工作（试玩零配置）。
+	show_llm_reasoning = _pick_debug_bool(user_cfg, dev_cfg, has_user, has_dev, "show_llm_reasoning", DEFAULT_SHOW_LLM_REASONING)
+	force_rule_ai = _pick_debug_bool(user_cfg, dev_cfg, has_user, has_dev, "force_rule_ai", DEFAULT_FORCE_RULE_AI)
+	log_prompts = _pick_debug_bool(user_cfg, dev_cfg, has_user, has_dev, "log_prompts", DEFAULT_LOG_PROMPTS)
+	log_path = _resolve_log_path(_pick_debug_string(user_cfg, dev_cfg, has_user, has_dev, "log_path", DEFAULT_LOG_PATH))
 
 	# 步骤 5: 如果是 mock，直接返回
 	if active_provider == "mock":
@@ -236,10 +251,12 @@ max_tokens = 2000  ; ← 已被 LLMConfig.MAX_TOKENS_OVERRIDE 覆盖
 timeout_sec = 30.0
 
 [debug]
-show_llm_reasoning = false
+; 调试开关默认与 LLMConfig.DEFAULT_* 常量保持一致
+; log_path = "" 表示自动：编辑器内写 user://llm_log.txt，导出版写 exe 同级目录
+show_llm_reasoning = true
 force_rule_ai = false
-log_prompts = false
-log_path = "user://llm_log.txt"
+log_prompts = true
+log_path = ""
 """
 
 
@@ -275,3 +292,44 @@ func _pick_float(user_cfg: ConfigFile, dev_cfg: ConfigFile, has_user: bool, has_
 	if has_dev and dev_cfg.has_section_key(section, key):
 		return float(dev_cfg.get_value(section, key, default))
 	return default
+
+
+## debug 段：user 优先，user 没有 key 才用 dev（与 _pick_string 对 provider 段的策略一致）
+func _pick_debug_bool(user_cfg: ConfigFile, dev_cfg: ConfigFile, has_user: bool, has_dev: bool, key: String, default: bool) -> bool:
+	if has_user and user_cfg.has_section_key("debug", key):
+		return bool(user_cfg.get_value("debug", key, default))
+	if has_dev and dev_cfg.has_section_key("debug", key):
+		return bool(dev_cfg.get_value("debug", key, default))
+	return default
+
+
+func _pick_debug_string(user_cfg: ConfigFile, dev_cfg: ConfigFile, has_user: bool, has_dev: bool, key: String, default: String) -> String:
+	if has_user and user_cfg.has_section_key("debug", key):
+		var v := String(user_cfg.get_value("debug", key, ""))
+		if v.length() > 0:
+			return v
+	if has_dev and dev_cfg.has_section_key("debug", key):
+		var v2 := String(dev_cfg.get_value("debug", key, ""))
+		if v2.length() > 0:
+			return v2
+	return default
+
+
+## 解析 log_path：
+##   - 空字符串 → 自动模式：导出版写 exe 同级目录的 llm_log.txt；编辑器内写 user://llm_log.txt
+##   - "user://..." 或 "res://..." → 原样
+##   - 绝对路径（含盘符或 /）→ 原样
+##
+## 设计目的：dev.cfg 里写 log_path = ""（打包默认值），让朋友打开 exe 后，
+## 日志直接写在 exe 同级目录，方便他打 zip 发回来。
+func _resolve_log_path(raw: String) -> String:
+	if raw.length() == 0:
+		# 编辑器：保持 user://（避免污染项目目录）
+		if OS.has_feature("editor"):
+			return "user://llm_log.txt"
+		# 导出版：写到 exe 同级目录
+		var exe_dir: String = OS.get_executable_path().get_base_dir()
+		if exe_dir.length() > 0:
+			return exe_dir.path_join("llm_log.txt")
+		return "user://llm_log.txt"
+	return raw

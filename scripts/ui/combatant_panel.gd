@@ -9,7 +9,8 @@ var _current_hp: int = 0
 var _displayed_hp: float = 0.0  # 平滑动画用
 var _armor: int = 0
 var _energy: int = 0
-var _max_energy: int = 3
+var _max_energy: int = 6  # v0.7.x-rebal：base_energy=6（之前默认 3 已过时，导致 Boss UI 显示 3 格）
+var _hand_count: int = -1  # -1 = 不显示徽章；用于 Boss 手牌张数（B 浮层 HAND 区，GDD 04:78 暗出张数公开衍生）
 
 var _hp_shake_offset: float = 0.0
 var _hp_flash_time: float = 0.0
@@ -58,6 +59,19 @@ func set_energy(energy: int) -> void:
 	queue_redraw()
 
 
+## 显式设置最大能量（格数）—— 用于回合开始重置时恢复正确格数
+func set_max_energy(max_energy: int) -> void:
+	_max_energy = max(max_energy, 1)
+	queue_redraw()
+
+
+## 设置手牌张数徽章（Boss 专用，is_boss=false 时不显示）
+## 传 -1 隐藏徽章
+func set_hand_count(count: int) -> void:
+	_hand_count = count
+	queue_redraw()
+
+
 func _process(delta: float) -> void:
 	# HP 条平滑追赶
 	if abs(_displayed_hp - float(_current_hp)) > 0.1:
@@ -86,6 +100,12 @@ func _draw() -> void:
 	# 名字
 	var name_prefix: String = "◆ " if is_boss else "◇ "
 	draw_string(ThemeDB.fallback_font, Vector2(start_x, y + 22), name_prefix + combatant_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
+
+	# 手牌张数徽章（Boss 专用 / B 浮层 HAND 区）
+	# 视觉：右上角 "🂠 N" 青蓝胶囊，仅显示张数不显示内容
+	if is_boss and _hand_count >= 0:
+		_draw_hand_count_badge(start_x, y, w)
+
 	y += 40.0
 
 	# HP 条
@@ -131,3 +151,31 @@ func _draw() -> void:
 		else:
 			draw_rect(crystal_rect, ENERGY_BG_COLOR, true)
 			draw_rect(crystal_rect, Color(0.3, 0.25, 0.1), false, 1.5)
+
+
+## 手牌张数徽章 — Boss 专用（B 浮层 HAND 区）
+## 位置：面板右上角，与名字同一行
+## 视觉：青蓝胶囊背景 + "🂠 N"
+func _draw_hand_count_badge(start_x: float, y: float, w: float) -> void:
+	const BADGE_BG := Color(0.12, 0.35, 0.42, 0.85)
+	const BADGE_BORDER := Color(0.2, 0.85, 0.95, 1.0)
+	const BADGE_TEXT := Color(0.85, 0.97, 1.0, 1.0)
+	var badge_w: float = 64.0
+	var badge_h: float = 28.0
+	var badge_x: float = start_x + w - badge_w
+	var badge_y: float = y + 4.0
+	var badge_rect := Rect2(badge_x, badge_y, badge_w, badge_h)
+	# 背景胶囊（用矩形+圆角描边近似）
+	draw_rect(badge_rect, BADGE_BG, true)
+	draw_rect(badge_rect, BADGE_BORDER, false, 1.5)
+	# 文字 "🂠 N"
+	var text: String = "🂠 %d" % _hand_count
+	draw_string(
+		ThemeDB.fallback_font,
+		Vector2(badge_x + 8.0, badge_y + 20.0),
+		text,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		badge_w - 16.0,
+		15,
+		BADGE_TEXT,
+	)

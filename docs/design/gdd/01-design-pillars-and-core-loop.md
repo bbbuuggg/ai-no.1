@@ -1,5 +1,10 @@
 # Design Pillars & 核心循环 GDD
 
+> ⚠️ **DEPRECATED 2026-05-14（部分内容）**
+> 题材已转向「火/水/木 + 光明/暗黑」，详见 **GDD-06**（`gdd/06-elements-polarity-battle.md`）和 **ADR-002**。
+> 本文档的"赛博朋克 NULL Protocol"题材描述、ATK/DEF/SKL 三角克制规则、卡牌示例 **均已过时**；
+> 但**核心循环结构**（Roguelike Boss Rush + 卡牌 + BP 对决）仍然有效，可作为历史参考。
+
 > 项目：NULL Protocol（暂定名）
 > 引擎：Godot 4.6.2 | 视角：2.5D | 类型：Roguelike Boss Rush 卡牌
 > 版本：v0.1 | 日期：2026-04-30

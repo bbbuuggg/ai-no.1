@@ -1,5 +1,9 @@
 # GDD 方向修正：对称对弈 + LLM AI
 
+> ⚠️ **DEPRECATED 2026-05-14（部分内容）**
+> 卡牌克制已转向「火/水/木 3-cycle」，详见 **GDD-06**（`gdd/06-elements-polarity-battle.md`）。
+> 本文档的"对称对弈"理念仍然有效，但具体的克制规则、约束令系统部分已被 GDD-04 + GDD-06 取代。
+
 > 版本：v0.2 | 日期：2026-04-30
 > 本文档覆盖 01-design-pillars-and-core-loop.md 中的 Pillar 2、回合结构、Boss 系统相关章节
 

@@ -19,6 +19,8 @@ config/icon="res://icon.svg"
 [autoload]
 
 CardDatabase="*res://autoload/card_database.gd"
+RunState="*res://autoload/run_state.gd"
+UpgradeRegistry="*res://scripts/data/upgrade_registry.gd"
 
 [display]
 

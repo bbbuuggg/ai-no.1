@@ -1,5 +1,7 @@
 # ADR-001: 接入 LLM 作为 Boss AI
 
+> ℹ️ **2026-05-14 校验**：本 ADR 的 LLM 架构决策仍然 Active；但其中"赛博朋克题材"描述已过时，题材以 **ADR-002** 为准。
+
 **状态**：✅ 已实施（v0.4 MVP）
 **日期**：2026-05-12
 **决策者**：vibe-lead + technical-director + game-designer + lead-programmer

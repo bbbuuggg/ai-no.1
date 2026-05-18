@@ -4,7 +4,9 @@ extends BaseCardUI
 ##
 ## 视觉规范（由 art-director 定义）：
 ##   accent: Color(0.2, 0.85, 0.95)  青蓝
-##   顶部标记条: "消耗 ⚡N ｜ 触发：<槽位图标>"
+##   顶部标记条: "消耗 ◆N ｜ 触发：<槽位图标>"
+##   注：使用 ◆（约束令符号，与 HUD"◆ 约束: N"统一），
+##   绝对避免 ⚡（闪电=能量符号，会引发"陷阱消耗能量"错觉）
 ##   卡面中心: 触发类型图腾水印（40% alpha）
 ##     - ATTACK    → 红色剑形  (0.9, 0.2, 0.2)
 ##     - SKILL     → 绿色齿轮  (0.2, 0.9, 0.4)
@@ -67,12 +69,12 @@ func _draw_card_front(_rect: Rect2, accent: Color) -> void:
 	# 1) 中心触发类型图腾水印（最底层）
 	_draw_trigger_totem()
 
-	# 2) 顶部标记条："消耗 ⚡N ｜ 触发：攻/技/高"
+	# 2) 顶部标记条："消耗 ◆N ｜ 触发：攻/技/高"
 	var cost_text: String
 	if trap_data.is_bluff:
-		cost_text = "消耗 ⚡0"
+		cost_text = "消耗 ◆0"
 	else:
-		cost_text = "消耗 ⚡%d" % trap_data.resource_cost
+		cost_text = "消耗 ◆%d" % trap_data.resource_cost
 	var slot_short: String = SLOT_SHORT_NAMES.get(trap_data.slot, "?")
 	var header: String = "%s  触发:%s" % [cost_text, slot_short]
 	# 资源不足时"消耗"变红
@@ -176,14 +178,23 @@ func _draw_bolt(cx: float, cy: float, len: float, col: Color) -> void:
 # 输入
 # ------------------------------------------------------------------
 func _input(event: InputEvent) -> void:
+	# 幽灵卡防御：queue_free 后到真正销毁之间仍可能收到 _input 事件，
+	# 必须显式拒绝；同时要求 is_inside_tree 和未排队删除。
+	if is_queued_for_deletion():
+		return
+	if not is_inside_tree():
+		return
 	if not _position_stored:
 		return
 	if not is_visible_in_tree():
+		return
+	# 二次防线：禁用态绝对不响应（防止 setup 后 set_usable(false) 到下一帧
+	# 之间的窗口期被点击）
+	if not is_usable:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			var mouse_pos: Vector2 = get_global_mouse_position()
 			if get_visual_rect_global().has_point(mouse_pos):
-				if is_usable:
-					trap_clicked.emit(trap_data)
-					get_viewport().set_input_as_handled()
+				trap_clicked.emit(trap_data)
+				get_viewport().set_input_as_handled()

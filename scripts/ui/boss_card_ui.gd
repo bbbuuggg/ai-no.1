@@ -63,11 +63,25 @@ func _draw() -> void:
 		return
 
 	var type_color: Color = TYPE_COLORS.get(card_data.type, Color.WHITE)
+	var element: int = card_data.element
+	var polarity: int = card_data.polarity
+	var has_element: bool = element != CardData.Element.NONE
+	var has_polarity: bool = polarity != CardData.Polarity.NONE
 
-	# 1) 斜切角多边形背景（右上+左下切角）
+	# 1) 斜切角多边形背景
 	var poly := _build_cut_polygon()
-	# 渐变填充：用两个三角形近似（上半深紫 / 下半暗红紫）
-	_draw_polygon_gradient(poly, BG_TOP, BG_BOTTOM)
+	if has_element:
+		# v0.6.0：Boss 卡也吃元素色——但保留敌意感（叠红色调暗影）
+		var elem_col: Color = ElementVisualHelper.get_element_color(element)
+		# 敌意调色：往红紫方向压暗 0.85，保留 Boss 视觉一致性
+		var boss_elem_col: Color = elem_col.lerp(Color(0.45, 0.10, 0.18), 0.30)
+		draw_colored_polygon(poly, boss_elem_col)
+		# 顶部覆盖暗紫，营造 Boss 厚重感
+		var top_rect := Rect2(0, 0, CARD_WIDTH, CARD_HEIGHT * 0.4)
+		draw_rect(top_rect, Color(0.10, 0.04, 0.10, 0.45), true)
+	else:
+		# 旧路径：双色渐变近似
+		_draw_polygon_gradient(poly, BG_TOP, BG_BOTTOM)
 
 	# 2) 故障错位条纹（静态 2 条，仅在 show_glitch 时）
 	if show_glitch:
@@ -76,23 +90,48 @@ func _draw() -> void:
 	# 3) 顶部 HOSTILE 警戒条
 	_draw_hostile_bar()
 
-	# 4) 左侧类型色竖条
+	# 4) 左侧色竖条：v0.6.0 用元素色（更亮的元素色作高亮），否则旧 type 色
+	var bar_color: Color = type_color
+	if has_element:
+		bar_color = ElementVisualHelper.get_element_color(element)
 	var type_bar := Rect2(0, HOSTILE_BAR_H, TYPE_BAR_W, CARD_HEIGHT - HOSTILE_BAR_H)
-	draw_rect(type_bar, type_color, true)
+	draw_rect(type_bar, bar_color, true)
 
-	# 5) 能量代价 + 类型短名（右上，警戒条下方）
-	var header := "%s  ⚡%d" % [TYPE_NAMES.get(card_data.type, "?"), card_data.energy_cost]
+	# 5) 顶部条下方 header：v0.6.0 优先显示元素汉字 + 光暗符号 + 能耗
+	var header_text: String
+	var header_color: Color = bar_color
+	if has_element:
+		var elem_name: String = ElementHelper.element_name(element)
+		header_text = "%s  ⚡%d" % [elem_name, card_data.energy_cost]
+		# 光/暗 符号挂在 header 末尾（小巧不抢戏）
+		if polarity == CardData.Polarity.LIGHT:
+			header_text += "  ☀"
+		elif polarity == CardData.Polarity.DARK:
+			header_text += "  🌑"
+	else:
+		header_text = "%s  ⚡%d" % [TYPE_NAMES.get(card_data.type, "?"), card_data.energy_cost]
 	draw_string(
 		ThemeDB.fallback_font,
 		Vector2(TYPE_BAR_W + 8, HOSTILE_BAR_H + 18),
-		header,
+		header_text,
 		HORIZONTAL_ALIGNMENT_LEFT,
 		CARD_WIDTH - TYPE_BAR_W - 16,
 		13,
-		type_color,
+		header_color,
 	)
 
-	# 6) 卡名
+	# 6) 卡名（白字；元素卡时加 1px 黑描边以提高深色背景上的可读性）
+	if has_element:
+		draw_string_outline(
+			ThemeDB.fallback_font,
+			Vector2(TYPE_BAR_W + 8, 62),
+			card_data.card_name,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			CARD_WIDTH - TYPE_BAR_W - 16,
+			17,
+			1,
+			Color.BLACK,
+		)
 	draw_string(
 		ThemeDB.fallback_font,
 		Vector2(TYPE_BAR_W + 8, 62),
@@ -114,8 +153,19 @@ func _draw() -> void:
 	# 8) 效果描述（多行）
 	var lines: Array[String] = _get_effect_lines()
 	var y: float = 94.0
-	var desc_color := Color(0.9, 0.75, 0.8)
+	var desc_color: Color = Color.WHITE if has_element else Color(0.9, 0.75, 0.8)
 	for line in lines:
+		if has_element:
+			draw_string_outline(
+				ThemeDB.fallback_font,
+				Vector2(TYPE_BAR_W + 8, y),
+				line,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				CARD_WIDTH - TYPE_BAR_W - 16,
+				12,
+				1,
+				Color.BLACK,
+			)
 		draw_string(
 			ThemeDB.fallback_font,
 			Vector2(TYPE_BAR_W + 8, y),
@@ -138,9 +188,14 @@ func _draw() -> void:
 		HOSTILE_COLOR * 0.7,
 	)
 
-	# 10) 边框（1px 血红，沿切角多边形）
-	var border_color: Color = HOSTILE_COLOR if is_hovered() else HOSTILE_COLOR * 0.7
-	_draw_polygon_outline(poly, border_color, 1.5 if is_hovered() else 1.0)
+	# 10) 边框：v0.6.0 元素卡用光暗描边色；旧路径维持血红
+	var border_color: Color
+	if has_polarity:
+		border_color = ElementVisualHelper.get_polarity_border_color(polarity)
+	else:
+		border_color = HOSTILE_COLOR if is_hovered() else HOSTILE_COLOR * 0.7
+	var border_w: float = 2.0 if has_polarity else (1.5 if is_hovered() else 1.0)
+	_draw_polygon_outline(poly, border_color, border_w)
 
 
 # ------------------------------------------------------------------
@@ -241,6 +296,10 @@ func _get_effect_lines() -> Array[String]:
 		lines.append("下次攻击 +%d" % card_data.next_attack_bonus)
 	if card_data.all_attack_bonus > 0:
 		lines.append("本回合攻击 +%d" % card_data.all_attack_bonus)
+	if card_data.enemy_draw_modifier < 0:
+		lines.append("下一回合抽牌%d" % card_data.enemy_draw_modifier)
+	if card_data.enemy_energy_modifier < 0:
+		lines.append("下一回合能量%d" % card_data.enemy_energy_modifier)
 	if lines.is_empty():
 		lines.append(card_data.description)
 	return lines

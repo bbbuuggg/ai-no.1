@@ -163,6 +163,12 @@ func _set_pulse_factor(v: float) -> void:
 
 # ------------------------------------------------------------------
 # 绘制入口 —— 子类覆盖 _draw_card_front
+#
+# v1.1 元素+光暗视觉规格：
+#   - 子类如果有元素/光暗（火/水/木 + 光/暗），覆盖 get_card_element() / get_card_polarity()
+#   - 元素 != NONE 时：用元素色铺底（替换 BG_COLOR_DEFAULT），文字层走白字+黑描边路径
+#   - 极性 != NONE 时：用 4px 光暗描边光环（替换 accent 边框）
+#   - 默认（NONE）保持旧外观，旧子类（约束/陷阱）零破坏
 # ------------------------------------------------------------------
 func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, Vector2(CARD_WIDTH, CARD_HEIGHT))
@@ -170,16 +176,30 @@ func _draw() -> void:
 	if not _is_card_usable():
 		accent = DISABLED_COLOR
 
-	# 1) 卡背
-	draw_rect(rect, BG_COLOR_DEFAULT, true)
+	var element: int = get_card_element()
+	var polarity: int = get_card_polarity()
+
+	# 1) 卡背 / 元素铺底
+	if element != CardData.Element.NONE:
+		# v1.1：元素色不透明铺底
+		ElementVisualHelper.draw_element_background(self, rect, element)
+	else:
+		# 旧路径：暗色卡背
+		draw_rect(rect, BG_COLOR_DEFAULT, true)
 
 	# 2) 子类主卡面（顶部标记条 + 卡名 + 图腾 + 描述等）
 	_draw_card_front(rect, accent)
 
-	# 3) 基础边框（hover 时加亮；selected 脉冲叠加发光）
-	var border_color: Color = accent if _is_hovered else accent * 0.7
-	var border_width: float = 2.5 if _is_hovered else 2.0
-	draw_rect(rect, border_color, false, border_width)
+	# 3) 边框：光暗描边光环（v1.1）/ accent 边框（旧路径）
+	var drew_polarity: bool = false
+	if polarity != CardData.Polarity.NONE and _is_card_usable():
+		drew_polarity = ElementVisualHelper.draw_polarity_border(self, rect, polarity)
+
+	if not drew_polarity:
+		# 旧路径：accent 颜色边框（hover 加亮）
+		var border_color: Color = accent if _is_hovered else accent * 0.7
+		var border_width: float = 2.5 if _is_hovered else 2.0
+		draw_rect(rect, border_color, false, border_width)
 
 	# 4) 选中脉冲外发光（多层边框模拟发光）
 	if _is_selected and _pulse_factor > 0.0:
@@ -206,6 +226,20 @@ func get_accent_color() -> Color:
 ## 子类可覆盖：是否处于可用状态（影响禁用态绘制）
 func _is_card_usable() -> bool:
 	return true
+
+
+## v1.1 子类可覆盖：返回卡牌元素（火/水/木/NONE）
+## 默认 NONE → 走旧外观（暗色卡背 + accent 边框）
+## 子类覆盖后将自动触发：元素色不透明铺底 + 文字白字+黑描边
+func get_card_element() -> int:
+	return CardData.Element.NONE
+
+
+## v1.1 子类可覆盖：返回卡牌极性（光/暗/NONE）
+## 默认 NONE → 走旧 accent 边框
+## 子类覆盖后将自动触发：4px 光暗描边光环（替换 accent 边框）
+func get_card_polarity() -> int:
+	return CardData.Polarity.NONE
 
 
 # ------------------------------------------------------------------

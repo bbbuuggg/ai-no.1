@@ -1,6 +1,11 @@
 class_name ClashResolver
 extends RefCounted
-## 碰撞结算引擎 — 逐对翻开 + 三角克制
+## 碰撞结算引擎 — 逐对翻开 + 元素克制
+##
+## v0.6.0 元素+光暗转向（ADR-002）：
+## - 主克制：火/水/木 3-cycle（火克木 / 木克水 / 水克火），见 ElementHelper
+## - 协同：4 张牌 2:2 平衡光暗 → 玩家克制倍率 1.5 → 2.0（A2 保底版仅实装此项）
+## - 旧 ATK/DEF/SKL 三角克制已移除，element=NONE 的牌视为中立
 
 ## 碰撞结果数据
 class ClashResult:
@@ -9,6 +14,7 @@ class ClashResult:
 	var player_multiplier: float = 1.0
 	var boss_multiplier: float = 1.0
 	var clash_type: String = ""  # "counter_player", "counter_boss", "neutral", "free_player", "free_boss"
+	var balanced_bonus: bool = false  # v0.6.0：本对玩家方是否吃了 2:2 平衡 ×2.0 加成
 	var trap_triggered: bool = false
 	var trap_data: TrapData = null
 	# v0.4.3 hotfix-4：本对玩家牌的 0 费绑定牌（用于 UI 展示"绑定+X 抽牌效果"）。
@@ -16,63 +22,76 @@ class ClashResult:
 	var player_bound_zero: CardData = null
 
 
-## 三角克制判定：返回 1=player克制, -1=boss克制, 0=中立/同类型
-static func get_counter_result(player_type: CardData.CardType, boss_type: CardData.CardType) -> int:
-	# 攻击克技能、技能克防御、防御克攻击
-	if player_type == boss_type:
+## v0.6.0：克制判定（仅元素克制，旧牌 NONE 元素视为中立）
+## 返回 1=玩家克制, -1=Boss克制, 0=中立
+static func get_counter_result(player_card: CardData, boss_card: CardData) -> int:
+	if player_card == null or boss_card == null:
 		return 0
-	# 协议牌视为技能类参与碰撞
-	var p_type := _normalize_type(player_type)
-	var b_type := _normalize_type(boss_type)
-	if p_type == b_type:
-		return 0
-	if p_type == CardData.CardType.ATTACK and b_type == CardData.CardType.SKILL:
-		return 1
-	if p_type == CardData.CardType.SKILL and b_type == CardData.CardType.DEFENSE:
-		return 1
-	if p_type == CardData.CardType.DEFENSE and b_type == CardData.CardType.ATTACK:
-		return 1
-	# 反向
-	if b_type == CardData.CardType.ATTACK and p_type == CardData.CardType.SKILL:
-		return -1
-	if b_type == CardData.CardType.SKILL and p_type == CardData.CardType.DEFENSE:
-		return -1
-	if b_type == CardData.CardType.DEFENSE and p_type == CardData.CardType.ATTACK:
-		return -1
+	# 仅使用元素克制；双方都已声明元素才判定
+	if ElementHelper.has_elements(player_card, boss_card):
+		return ElementHelper.get_element_counter(player_card.element, boss_card.element)
+	# 有一方 element=NONE → 中立（不再使用旧 type 三角克制）
 	return 0
 
 
-## 协议牌归类为技能参与碰撞
-static func _normalize_type(type: CardData.CardType) -> CardData.CardType:
-	if type == CardData.CardType.PROTOCOL:
-		return CardData.CardType.SKILL
-	return type
-
-
 ## 执行完整碰撞序列，返回 ClashResult 数组
+##
+## v0.6.0：先计算玩家牌组的 2:2 平衡状态（一次性，对所有对都生效），
+## 再逐对计算克制倍率，玩家方触发平衡时把 1.5 → 2.0
 static func resolve_clash(player_cards: Array[CardData], boss_cards: Array[CardData]) -> Array[ClashResult]:
 	var results: Array[ClashResult] = []
 	var max_pairs: int = maxi(player_cards.size(), boss_cards.size())
+
+	# v0.6.0：仅对玩家牌组检查 2:2 平衡（A2 保底版只奖励玩家平衡出牌）
+	var player_balanced: bool = ElementHelper.is_balanced_polarity(player_cards)
 
 	for i in range(max_pairs):
 		var result := ClashResult.new()
 
 		if i < player_cards.size() and i < boss_cards.size():
-			# 正常配对
-			result.player_card = player_cards[i]
-			result.boss_card = boss_cards[i]
-			var counter: int = get_counter_result(player_cards[i].type, boss_cards[i].type)
-			if counter == 1:
-				result.player_multiplier = 1.5
-				result.boss_multiplier = 0.5
-				result.clash_type = "counter_player"
-			elif counter == -1:
-				result.player_multiplier = 0.5
-				result.boss_multiplier = 1.5
-				result.clash_type = "counter_boss"
+			# 同 slot 配对（BP 模式下两数组等长，null 表示该方未出牌）
+			var p_card: CardData = player_cards[i]
+			var b_card: CardData = boss_cards[i]
+
+			if p_card != null and b_card != null:
+				# 双方均出牌 → 正常克制判定
+				result.player_card = p_card
+				result.boss_card = b_card
+				var counter: int = get_counter_result(p_card, b_card)
+				if counter == 1:
+					if player_balanced:
+						result.player_multiplier = 2.0
+						result.balanced_bonus = true
+					else:
+						result.player_multiplier = 1.5
+					result.boss_multiplier = 0.5
+					result.clash_type = "counter_player"
+				elif counter == -1:
+					result.player_multiplier = 0.5
+					result.boss_multiplier = 1.5
+					result.clash_type = "counter_boss"
+				else:
+					result.player_multiplier = 1.0
+					result.boss_multiplier = 1.0
+					result.clash_type = "neutral"
+			elif p_card != null and b_card == null:
+				# 玩家出牌，Boss 未出 → 毫无阻力，效果 ×2
+				result.player_card = p_card
+				result.boss_card = null
+				result.player_multiplier = 2.0
+				result.boss_multiplier = 0.0
+				result.clash_type = "unopposed_player"
+			elif p_card == null and b_card != null:
+				# Boss 出牌，玩家未出 → 毫无阻力，效果 ×2
+				result.player_card = null
+				result.boss_card = b_card
+				result.player_multiplier = 0.0
+				result.boss_multiplier = 2.0
+				result.clash_type = "unopposed_boss"
 			else:
-				result.player_multiplier = 1.0
-				result.boss_multiplier = 1.0
+				# 双方均未出牌
+				result.player_multiplier = 0.0
+				result.boss_multiplier = 0.0
 				result.clash_type = "neutral"
 		elif i < player_cards.size():
 			# 玩家多余牌

@@ -15,6 +15,7 @@ extends Control
 
 signal deploy_confirmed()
 signal probe_jammed()
+signal constraint_changed(new_value: int)  # UI 内部约束资源变动时通知 HUD 同步
 
 var _trap_inventory: Array[TrapData] = []
 var _constraint_resource: int = 0
@@ -78,6 +79,12 @@ func get_deployed_slots() -> Array:
 	return _slots.duplicate()
 
 
+## 返回 UI 内当前剩余的约束资源（已扣除部署消耗与干扰消耗）
+## 用于 _on_deploy_confirmed 时把 UI 的最终值回写到 battle，避免 battle 二次扣款
+func get_remaining_resource() -> int:
+	return _constraint_resource
+
+
 # ------------------------------------------------------------------
 # 总刷新
 # ------------------------------------------------------------------
@@ -118,7 +125,12 @@ func _make_slot_view(index: int) -> Control:
 # 候选区（卡片）
 # ------------------------------------------------------------------
 func _refresh_traps() -> void:
+	# 幽灵卡防御：queue_free 是延迟销毁，在新卡 ready 前的过渡帧
+	# 旧卡仍可能响应 _input。先批量禁用 is_usable，再 queue_free。
 	for child in traps_container.get_children():
+		var old_card := child as TrapCardUI
+		if old_card != null:
+			old_card.is_usable = false  # 直接设字段，绕过 set_usable 的早返回判定
 		child.queue_free()
 
 	for trap in _trap_inventory:
@@ -228,6 +240,8 @@ func _on_confirm() -> void:
 func _update_info() -> void:
 	resource_label.text = "约束资源: %d" % _constraint_resource
 	jam_btn.disabled = _constraint_resource < 1
+	# 通知外部 HUD 实时同步（视觉一致性：避免"HUD 显示 ◆1 但 UI 内已 0"的错位）
+	constraint_changed.emit(_constraint_resource)
 	# 刷新候选卡的 usable 态（资源变化后部分卡可能可用/禁用切换）
 	for child in traps_container.get_children():
 		var c := child as TrapCardUI

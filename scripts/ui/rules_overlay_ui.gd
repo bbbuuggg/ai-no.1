@@ -1,22 +1,24 @@
 class_name RulesOverlayUI
 extends Control
-## 规则介绍弹层
+## 规则介绍弹层（v0.7.x BP 模式 · 火水木）
 ##
-## 内容（由 game-designer + art-director 定义）：
-##   1. 口号："读懂协议，压制进程"
-##   2. 三角克制图：三顶点 ⚔攻 / ◈防 / ✦技 + 克制箭头（×1.5 标注） + 协议说明
-##   3. 回合 5 阶段横向时间轴（DEPLOY / BLIND / CLASH / PROBE / ROUND_END）
-##   4. 关键术语速查表（6 条）
+## 内容：
+##   1. 三角克制图（自绘）— 火 / 水 / 木 3-cycle 互克 ×1.5
+##   2. 倍率与光暗 2:2 平衡说明
+##   3. BP 单回合流程（5 步：抽候选 → 决先手 → 交替 Pick → 翻盅 → 结算）
+##   4. 关键参数速查（候选窗 / 槽位 / 能量 / 0 费）
+##   5. 名词速查
 ##
-## 视觉：全息蓝图风（网格底纹 + 青蓝边框 + 无切角 严谨学术感）
+## 视觉：全息蓝图风（深蓝底 + 青蓝边）
 
 signal closed()
 
-# 类型色（全局统一）
-const COLOR_ATTACK := Color(0.9, 0.2, 0.2, 1.0)
-const COLOR_DEFENSE := Color(0.2, 0.7, 0.9, 1.0)
-const COLOR_SKILL := Color(0.2, 0.9, 0.4, 1.0)
-const COLOR_PROTOCOL := Color(0.9, 0.75, 0.1, 1.0)
+# 元素色（与 ElementVisualHelper 同步）
+const COLOR_FIRE := Color(0.91, 0.29, 0.16, 1.0)   # 红橙
+const COLOR_WATER := Color(0.23, 0.56, 0.88, 1.0)  # 冷蓝
+const COLOR_WOOD := Color(0.31, 0.69, 0.31, 1.0)   # 翠绿
+const COLOR_LIGHT := Color(1.0, 0.92, 0.55, 1.0)   # 光（金）
+const COLOR_DARK := Color(0.55, 0.40, 0.85, 1.0)   # 暗（紫）
 const ACCENT := Color(0.3, 0.85, 1.0, 1.0)
 const PANEL_BG := Color(0.04, 0.08, 0.14, 0.97)
 
@@ -98,7 +100,7 @@ func _build_ui() -> void:
 
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 20)
+	vbox.add_theme_constant_override("separation", 18)
 	scroll.add_child(vbox)
 
 	# 标题栏（含关闭按钮）
@@ -113,10 +115,13 @@ func _build_ui() -> void:
 	# 区块 3：倍率规则速记
 	_build_multiplier_rules(vbox)
 
-	# 区块 4：5 阶段时间轴
-	_build_timeline_block(vbox)
+	# 区块 4：BP 流程（5 步）
+	_build_bp_flow_block(vbox)
 
-	# 区块 5：术语速查表
+	# 区块 5：关键参数速查
+	_build_params_block(vbox)
+
+	# 区块 6：术语速查表
 	_build_glossary(vbox)
 
 
@@ -143,7 +148,7 @@ func _build_title_bar(parent: VBoxContainer) -> void:
 
 func _build_slogan(parent: VBoxContainer) -> void:
 	var slogan := Label.new()
-	slogan.text = "「进攻、防守、技能三种卡牌互相克制」"
+	slogan.text = "「火 · 水 · 木 三元素相互克制 — 双盲选牌、同时翻盅」"
 	slogan.add_theme_font_size_override("font_size", 22)
 	slogan.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
 	slogan.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -160,14 +165,14 @@ func _build_triangle_block(parent: VBoxContainer) -> void:
 
 	# 自绘三角
 	var triangle := CounterTriangle.new()
-	triangle.custom_minimum_size = Vector2(0, 360)
+	triangle.custom_minimum_size = Vector2(0, 320)
 	parent.add_child(triangle)
 
 	# 三角下方的文字说明（3 行克制关系）
 	var desc_lines := [
-		["⚔", "ATTACK  ▶ SKILL （×1.5）", "攻击牌克制技能牌，数值*1.5", COLOR_ATTACK],
-		["✦", "SKILL ▶ DEFENSE （×1.5）", "技能牌克制攻击牌，数值*1.5", COLOR_SKILL],
-		["◈", "DEFENSE ▶ ATTACK （×1.5）", "防御牌克制攻击牌，数值*1.5", COLOR_DEFENSE],
+		["🔥", "火 ▶ 木 （×1.5）", "火克木", COLOR_FIRE],
+		["🌿", "木 ▶ 水 （×1.5）", "木克水", COLOR_WOOD],
+		["💧", "水 ▶ 火 （×1.5）", "水克火", COLOR_WATER],
 	]
 	for d in desc_lines:
 		var hb := HBoxContainer.new()
@@ -196,82 +201,86 @@ func _build_multiplier_rules(parent: VBoxContainer) -> void:
 	var rules := RichTextLabel.new()
 	rules.bbcode_enabled = true
 	rules.fit_content = true
-	rules.custom_minimum_size = Vector2(0, 110)
+	rules.custom_minimum_size = Vector2(0, 180)
 	rules.add_theme_font_size_override("normal_font_size", 13)
 	rules.text = (
 		"[color=#4ddbff]倍率规则：[/color]\n"
 		+ "  • 克制方效果数值 ×1.5（向上取整）\n"
-		+ "  • 被克方效果数值 ×0.5\n"
-		+ "  • 中立 / 无对手 ×1.0\n"
-		+ "  • 倍率作用于该牌的[b]所有数值[/b]——伤害、护甲、治疗、抽牌、能量修正均按比例缩放\n"
+		+ "  • 被克方效果数值 ×0.5（向下取整）\n"
+		+ "  • 同元素对撞 / 中立 = ×1.0\n"
+		+ "  • 倍率作用于该牌的[b]所有数值[/b]——伤害、护甲、治疗、抽牌均按比例缩放\n"
 		+ "\n"
-		+ "[color=#e6bf1a]协议（PROTOCOL）[/color]：在碰撞判定中以 [color=#33e666]SKILL[/color] 身份参与克制。同类型对撞 = 中立。"
+		+ "[color=#ffeb8c]☀ 光[/color] / [color=#a780d8]🌑 暗[/color] 极性 · 2:2 平衡协同：\n"
+		+ "  • 玩家本回合 4 张牌中正好 [b]2 光 + 2 暗[/b] → 玩家克制倍率 ×1.5 → [b]×2.0[/b]\n"
+		+ "  • 不平衡或 0 平衡牌：保持基础 ×1.5\n"
+		+ "\n"
+		+ "[color=#ff664]⚡ 毫无阻力：[/color]\n"
+		+ "  • 某槽位一方出牌而另一方无能量出牌跳过 → 结算时对位为空判定「毫无阻力」→ 出牌方[b]全部效果 ×2[/b]\n"
+		+ "  • 宁可出最便宜的牌也不要空槽——空槽 = 让对手双倍痛击"
 	)
 	parent.add_child(rules)
 
 
-func _build_timeline_block(parent: VBoxContainer) -> void:
+func _build_bp_flow_block(parent: VBoxContainer) -> void:
 	var header := Label.new()
-	header.text = "— 单回合流程 —"
+	header.text = "— BP 单回合流程 —"
 	header.add_theme_font_size_override("font_size", 18)
 	header.add_theme_color_override("font_color", ACCENT)
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	parent.add_child(header)
 
-	# 自绘横向时间轴
+	# 自绘横向时间轴（5 步）
 	var timeline := PhaseTimeline.new()
 	timeline.custom_minimum_size = Vector2(0, 130)
 	parent.add_child(timeline)
 
-	# 5 阶段详细说明（每段 bullet + tip）
+	# 5 步详细说明
 	var phases := [
 		{
-			"name": "① DEPLOY · 部署陷阱",
-			"core": "埋下陷阱，限制 Boss 的行动路径。",
+			"name": "① 抽候选 · DRAW",
+			"core": "双方各从自己的牌库抽 6 张作为本回合候选窗（明牌可见）。",
 			"bullets": [
-				"消耗【约束资源】向三个触发槽位部署陷阱牌（攻 / 技 / 高费）",
-				"可部署【诱饵】——无效果，但会误导 Boss 的预判",
-				"可额外选择干扰探针，扰乱 猜测",
+				"候选窗回合内固定，对手候选你也能看见",
+				"回合末候选 6 张全部进入弃牌堆",
 			],
-			"tip": "⚡ 诱饵牌没有效果但价值很大。",
+			"tip": "⚡ 你能看见 Boss 候选 → 据此预判它最可能往哪个槽放什么。",
 		},
 		{
-			"name": "② BLIND · 暗出选牌",
-			"core": "选定出手顺序，在黑箱中与 Boss 同时落子。",
+			"name": "② 决先手 · FIRST PICKER",
+			"core": "随机决定本回合先手方，首回合随机，后续轮流交换。",
 			"bullets": [
-				"从手牌选 1-3 张，排列执行顺序放入暗出区",
-				"双方出牌同时封存，揭示之前互不可见",
-				"零能量牌可绑定为附带效果，搭载在主牌之上",
+				"蛇形出牌：偶数槽（Slot 1,3）先手方先出，奇数槽（Slot 2,4）后手方先出",
+				"等价 1-2-2-2-1 序列：先手信息优/劣势 2:2 完美平衡",
 			],
-			"tip": "⚡ 顺序本身就是一层博弈。",
+			"tip": "⚡ 顶部「先手：你 / 先手：回响」横幅会播报。中线 Slot 标签会标注谁先出。",
 		},
 		{
-			"name": "③ CLASH · 对决结算",
-			"core": "同时翻牌，逐对碰撞，计算结果。",
+			"name": "③ 交替 Pick · PICKING",
+			"core": "双方按 Slot 1→4 顺序交替从候选窗选牌入槽，对方看不到你选了哪张。",
 			"bullets": [
-				"双方牌依序逐对翻开，按三角克制计算倍率",
-				"数值效果实时结算：伤害、护甲、治疗、抽牌……",
-				"Boss 打出的牌若匹配陷阱槽位，陷阱立即触发",
+				"每槽出 1 张，共 4 槽 → 共 4 次 Pick / 方",
+				"出牌消耗能量：当前能量上限 8，每回合恢复 2",
+				"0 费过牌牌（灵光一现）独立通道：不进槽、立即抽 1，每回合最多 2 次",
 			],
-			"tip": "⚡ Boss 不会改写已经落下的牌——但你可以用陷阱重写它的后果。",
+			"tip": "⚡ Slot 越靠后你看到的对方信息越多，但选择也越受限。",
 		},
 		{
-			"name": "④ PROBE · 认知探针",
-			"core": " Boss每回合会猜测玩家的出牌类型。",
+			"name": "④ 翻盅 · REVEAL",
+			"core": "双方 4 槽同时翻开，逐对碰撞，按 火/水/木 3-cycle 计算倍率。",
 			"bullets": [
-				"预判玩家下回合出牌的类型倾向（攻 / 防 / 技）",
-				"命中则累积【洞察值】",
-				"洞察值达阈值，Boss获得单次技能：窥视手牌 / 干扰敌牌 / 夺取能量",
+				"Slot 1 vs Slot 1, Slot 2 vs Slot 2 … 一对一对决",
+				"克制方 ×1.5，被克方 ×0.5，同元素 ×1.0",
+				"玩家本回合 4 张恰好 2 光 + 2 暗 → 克制倍率 ×1.5 → ×2.0",
 			],
-			"tip": "⚡ Boss的随机猜测给牌局创造‘意外’，降低可预测性。",
+			"tip": "⚡ 这一刻顺序决定一切，没法反悔。",
 		},
 		{
-			"name": "⑤ ROUND_END · 回合结束",
-			"core": "清算、维护、重启下一轮协议。",
+			"name": "⑤ 结算 · RESOLVE",
+			"core": "按倍率应用伤害、护甲、治疗、抽牌等效果，进入下一回合。",
 			"bullets": [
-				"护甲按规则结算 / 清除",
-				"常驻【约束令】持续生效",
-				"状态刷新，进入下一回合",
+				"每对 0.35s 错峰结算，伤害飘字与扣血同步",
+				"4 对全部结算后，候选 6 张全弃 → 进入下一回合抽候选",
+				"任意一方血量 ≤ 0 → 战斗结束",
 			],
 			"tip": "",
 		},
@@ -308,6 +317,7 @@ func _build_phase_card(parent: VBoxContainer, phase: Dictionary) -> void:
 	core_lbl.text = String(phase["core"])
 	core_lbl.add_theme_font_size_override("font_size", 14)
 	core_lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0))
+	core_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vb.add_child(core_lbl)
 
 	# Bullets
@@ -316,30 +326,81 @@ func _build_phase_card(parent: VBoxContainer, phase: Dictionary) -> void:
 		bullet_lbl.text = "  • " + String(b)
 		bullet_lbl.add_theme_font_size_override("font_size", 13)
 		bullet_lbl.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95))
+		bullet_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		vb.add_child(bullet_lbl)
 
 	# Tip
-	var tip_lbl := Label.new()
-	tip_lbl.text = String(phase["tip"])
-	tip_lbl.add_theme_font_size_override("font_size", 12)
-	tip_lbl.add_theme_color_override("font_color", Color(0.9, 0.75, 0.3))
-	vb.add_child(tip_lbl)
+	var tip_text := String(phase["tip"])
+	if tip_text != "":
+		var tip_lbl := Label.new()
+		tip_lbl.text = tip_text
+		tip_lbl.add_theme_font_size_override("font_size", 12)
+		tip_lbl.add_theme_color_override("font_color", Color(0.9, 0.75, 0.3))
+		tip_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vb.add_child(tip_lbl)
+
+
+func _build_params_block(parent: VBoxContainer) -> void:
+	var header := Label.new()
+	header.text = "— 关键参数 —"
+	header.add_theme_font_size_override("font_size", 18)
+	header.add_theme_color_override("font_color", ACCENT)
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	parent.add_child(header)
+
+	var params := [
+		["候选窗", "6 张 / 回合", "回合内固定，回合末全弃"],
+		["出牌槽位", "4 槽 / 方", "Slot 1 → 4 顺序结算"],
+		["能量上限", "8 点", "每回合 +2，可累积不重置"],
+		["0 费牌", "每回合限 2 次", "立即生效，不进槽"],
+		["先手判定", "蛇形交替", "首回合随机，后续轮流；偶数槽先手先出，奇数槽后手先出"],
+	]
+
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 18)
+	grid.add_theme_constant_override("v_separation", 6)
+	parent.add_child(grid)
+
+	for p in params:
+		var k := Label.new()
+		k.text = String(p[0])
+		k.add_theme_font_size_override("font_size", 14)
+		k.add_theme_color_override("font_color", Color(0.9, 0.75, 0.3))
+		k.custom_minimum_size = Vector2(120, 0)
+		grid.add_child(k)
+		var v := Label.new()
+		v.text = String(p[1])
+		v.add_theme_font_size_override("font_size", 14)
+		v.add_theme_color_override("font_color", ACCENT)
+		v.custom_minimum_size = Vector2(180, 0)
+		grid.add_child(v)
+		var d := Label.new()
+		d.text = String(p[2])
+		d.add_theme_font_size_override("font_size", 13)
+		d.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95))
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(700, 0)
+		grid.add_child(d)
 
 
 func _build_glossary(parent: VBoxContainer) -> void:
 	var header := Label.new()
-	header.text = "— 名词定义 —"
+	header.text = "— 名词速查 —"
 	header.add_theme_font_size_override("font_size", 18)
 	header.add_theme_color_override("font_color", ACCENT)
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	parent.add_child(header)
 
 	var glossary := [
-		["暗出", "封存式出牌——揭示前双方互不可见的博弈阶段"],
-		["陷阱", "预先部署到槽位的牌，Boss 打出对应类型时被动触发"],
-		["约束令", "玩家主动向 Boss 施加的规则限制（限牌 / 限资源 / 幻觉）"],
-		["洞察值", "认知探针命中后累积的资源，用于解锁高级情报权限"],
-		["诱饵", "无效果的空白陷阱，用于污染 Boss 的行为判断"],
+		["候选窗", "本回合可选的 6 张明牌池，回合末全弃"],
+		["槽位 (Slot)", "1 ~ 4 共 4 个出牌位，按序逐对碰撞"],
+		["先手", "蛇形交替：首回合随机，后续轮流；偶数槽先手先出，奇数槽后手先出"],
+		["翻盅", "Pick 完成后双方所有槽同时揭示"],
+		["元素", "火 / 水 / 木 — 主克制维度（火克木 / 木克水 / 水克火）"],
+		["光暗极性", "光 ☀ / 暗 🌑 — 玩家 4 张 2:2 平衡 → 克制倍率 ×2.0"],
+		["0 费过牌", "灵光一现 — 不进槽，立即抽 1，每回合限 2 次"],
+		["毫无阻力", "对方无能量跳过 → 对位为空 → 出牌方效果 ×2"],
 	]
 
 	var grid := GridContainer.new()
@@ -353,7 +414,7 @@ func _build_glossary(parent: VBoxContainer) -> void:
 		term.text = String(g[0])
 		term.add_theme_font_size_override("font_size", 14)
 		term.add_theme_color_override("font_color", Color(0.9, 0.75, 0.3))
-		term.custom_minimum_size = Vector2(120, 0)
+		term.custom_minimum_size = Vector2(140, 0)
 		grid.add_child(term)
 		var def := Label.new()
 		def.text = String(g[1])
@@ -382,20 +443,21 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # ==================================================================
-# 内部类：三角克制图
+# 内部类：三角克制图（火/水/木 3-cycle · 玩家可读优先）
 # ==================================================================
 class CounterTriangle extends Control:
-	const C_ATK := Color(0.9, 0.2, 0.2, 1.0)
-	const C_DEF := Color(0.2, 0.7, 0.9, 1.0)
-	const C_SKL := Color(0.2, 0.9, 0.4, 1.0)
-	const C_PRO := Color(0.9, 0.75, 0.1, 1.0)
+	const C_FIRE := Color(0.91, 0.29, 0.16, 1.0)
+	const C_WATER := Color(0.23, 0.56, 0.88, 1.0)
+	const C_WOOD := Color(0.31, 0.69, 0.31, 1.0)
+	const C_LIGHT := Color(1.0, 0.92, 0.55, 1.0)
+	const C_DARK := Color(0.55, 0.40, 0.85, 1.0)
 
 	func _draw() -> void:
 		var w: float = size.x
 		var h: float = size.y
 		if w <= 0 or h <= 0:
 			return
-		# 三角三顶点（上/左下/右下）
+		# 三角三顶点（上=火/左下=水/右下=木）
 		var cx: float = w / 2.0
 		var cy: float = h / 2.0
 		var radius: float = min(w, h) * 0.38
@@ -403,33 +465,33 @@ class CounterTriangle extends Control:
 		var bl := Vector2(cx - radius * 0.866, cy + radius * 0.5)
 		var br := Vector2(cx + radius * 0.866, cy + radius * 0.5)
 
-		# 克制箭头（沿三角外弧）：ATK→SKL (top→br), SKL→DEF (br→bl), DEF→ATK (bl→top)
-		_draw_arrow_curve(top, br, C_ATK, "×1.5")
-		_draw_arrow_curve(br, bl, C_SKL, "×1.5")
-		_draw_arrow_curve(bl, top, C_DEF, "×1.5")
+		# 克制箭头：火→木（top→br，红），木→水（br→bl，绿），水→火（bl→top，蓝）
+		_draw_arrow_curve(top, br, C_FIRE, "×1.5")
+		_draw_arrow_curve(br, bl, C_WOOD, "×1.5")
+		_draw_arrow_curve(bl, top, C_WATER, "×1.5")
 
 		# 三顶点圆形节点（半径 36）
-		_draw_node(top, C_ATK, "⚔", "ATK")
-		_draw_node(bl, C_DEF, "◈", "DEF")
-		_draw_node(br, C_SKL, "✦", "SKL")
+		_draw_node(top, C_FIRE, "🔥", "FIRE")
+		_draw_node(bl, C_WATER, "💧", "WATER")
+		_draw_node(br, C_WOOD, "🌿", "WOOD")
 
 		# 中心注脚
 		draw_string(
 			ThemeDB.fallback_font,
 			Vector2(cx - 80, cy + 4),
-			"同类 / 对协议 = ×1.0",
+			"同元素 = ×1.0",
 			HORIZONTAL_ALIGNMENT_CENTER,
 			160,
 			12,
 			Color(0.65, 0.75, 0.85),
 		)
 
-		# 协议牌注释（右上角）
-		var pro_center := Vector2(w - 100, 50)
-		draw_rect(Rect2(pro_center - Vector2(40, 18), Vector2(80, 36)), C_PRO * Color(1, 1, 1, 0.2), true)
-		draw_rect(Rect2(pro_center - Vector2(40, 18), Vector2(80, 36)), C_PRO, false, 1.0)
-		draw_string(ThemeDB.fallback_font, Vector2(pro_center.x - 38, pro_center.y - 2), "⚡ PROTOCOL", HORIZONTAL_ALIGNMENT_CENTER, 76, 11, C_PRO)
-		draw_string(ThemeDB.fallback_font, Vector2(pro_center.x - 38, pro_center.y + 12), "归为 SKILL", HORIZONTAL_ALIGNMENT_CENTER, 76, 10, Color(0.8, 0.7, 0.4))
+		# 光暗 2:2 注释（右上角）
+		var pol_center := Vector2(w - 110, 50)
+		draw_rect(Rect2(pol_center - Vector2(50, 22), Vector2(100, 44)), Color(0.05, 0.06, 0.10, 0.85), true)
+		draw_rect(Rect2(pol_center - Vector2(50, 22), Vector2(100, 44)), C_LIGHT, false, 1.0)
+		draw_string(ThemeDB.fallback_font, Vector2(pol_center.x - 48, pol_center.y - 4), "☀光 2 · 暗🌑 2", HORIZONTAL_ALIGNMENT_CENTER, 96, 11, C_LIGHT)
+		draw_string(ThemeDB.fallback_font, Vector2(pol_center.x - 48, pol_center.y + 14), "→ ×2.0 协同", HORIZONTAL_ALIGNMENT_CENTER, 96, 11, C_DARK)
 
 	func _draw_node(pos: Vector2, col: Color, icon: String, label: String) -> void:
 		var r: float = 36.0
@@ -443,9 +505,9 @@ class CounterTriangle extends Control:
 		# 描边
 		draw_arc(pos, r, 0.0, TAU, 48, col, 2.5)
 		# 图标
-		draw_string(ThemeDB.fallback_font, pos + Vector2(-14, 6), icon, HORIZONTAL_ALIGNMENT_CENTER, 28, 24, col)
+		draw_string(ThemeDB.fallback_font, pos + Vector2(-14, 8), icon, HORIZONTAL_ALIGNMENT_CENTER, 28, 24, col)
 		# 标签
-		draw_string(ThemeDB.fallback_font, pos + Vector2(-24, r + 16), label, HORIZONTAL_ALIGNMENT_CENTER, 48, 14, col)
+		draw_string(ThemeDB.fallback_font, pos + Vector2(-30, r + 16), label, HORIZONTAL_ALIGNMENT_CENTER, 60, 14, col)
 
 	func _draw_arrow_curve(from_p: Vector2, to_p: Vector2, col: Color, label: String) -> void:
 		# 直线近似（不做贝塞尔，保持简洁），两端收缩避免压节点
@@ -473,17 +535,17 @@ class CounterTriangle extends Control:
 
 
 # ==================================================================
-# 内部类：5 阶段横向时间轴
+# 内部类：BP 5 步横向时间轴
 # ==================================================================
 class PhaseTimeline extends Control:
 	const ACCENT := Color(0.3, 0.85, 1.0, 1.0)
 
 	const PHASE_DATA := [
-		["①", "DEPLOY", "部署"],
-		["②", "BLIND", "暗出"],
-		["③", "CLASH", "对决"],
-		["④", "PROBE", "探针"],
-		["⑤", "ROUND_END", "回合末"],
+		["①", "DRAW", "抽候选"],
+		["②", "FIRST", "决先手"],
+		["③", "PICK", "交替 Pick"],
+		["④", "REVEAL", "翻盅"],
+		["⑤", "RESOLVE", "结算"],
 	]
 
 	func _draw() -> void:

@@ -1,21 +1,36 @@
 extends Control
 ## 对决翻牌演出 UI — 逐张翻开 + 克制视觉反馈
+##
+## v0.3 改造（Epic-BP-7 翻盅回归）：
+##   - 节奏参数化：SLIDE_IN_DUR / STANDOFF_DUR / FLIP_DUR / RESOLVE_DUR
+##   - 克制视觉化：金色边框 + 1.05× 缩放 + 屏震，弱化"克制!"文字
+##   - Space 跳过键：单击跳过当前对（_skip_current_pair=true）+ 长按 ×0.3 加速
+##   - 总演出时长 ~11.2s（4 对 × ~2.8s）
 
 signal clash_animation_complete()
 
 const CardUI := preload("res://scripts/ui/card_ui.gd")
 
+# === 节奏参数（v0.3 §2.1）===
+const SLIDE_IN_DUR: float = 0.30   # 滑入起始
+const STANDOFF_DUR: float = 0.40   # 牌背对峙
+const FLIP_DUR: float = 0.50       # 翻面（压扁→还原）
+const RESOLVE_DUR: float = 1.60    # 结算停留（看清结果 + 飘字播完）
+
+# === 克制视觉色（v0.3 §3.2 收敛）===
 const COUNTER_PLAYER_COLOR := Color(0.2, 1.0, 0.5, 1.0)  # 玩家克制 - 绿光
 const COUNTER_BOSS_COLOR := Color(1.0, 0.3, 0.3, 1.0)  # Boss克制 - 红光
-const NEUTRAL_COLOR := Color(0.8, 0.8, 0.8, 0.6)  # 中立 - 灰
+const NEUTRAL_COLOR := Color(0.8, 0.8, 0.8, 0.9)  # 中立 - 灰白
 const FREE_COLOR := Color(0.0, 0.85, 1.0, 1.0)  # 多余牌 - 青
+const COUNTER_HIGHLIGHT_GOLD := Color(1.0, 0.85, 0.3, 1.0)  # 克制方金色边框 + 1.05×
+
+# === Space 跳过键状态 ===
+var _skip_current_pair: bool = false
+var _hold_speedup: bool = false  # Space 长按 → 时间缩放 ×0.3
 
 var _results: Array = []  # Array[ClashResolver.ClashResult]
 var _current_index: int = 0
 var _is_playing: bool = false
-# 每播完一对的翻牌动画后调一次：apply_cb.call(index)
-# 这样 HP/护甲/陷阱效果在 UI 展示该对的瞬间才提交到 Combatant，
-# 视觉上 HP 数字会随每对结算逐步变化，而不是动画开始前就一次性扣完。
 var _apply_cb: Callable = Callable()
 
 @onready var player_card_area: Control = $HBox/PlayerSide/CardSlot
@@ -29,6 +44,8 @@ var _apply_cb: Callable = Callable()
 
 func _ready() -> void:
 	visible = false
+	# 让本 UI 在演出期间能接 Space input
+	set_process_unhandled_input(false)
 
 
 func start_clash_animation(results: Array, apply_cb: Callable = Callable()) -> void:
@@ -36,19 +53,53 @@ func start_clash_animation(results: Array, apply_cb: Callable = Callable()) -> v
 	_current_index = 0
 	_is_playing = true
 	_apply_cb = apply_cb
+	_skip_current_pair = false
+	_hold_speedup = false
 	visible = true
 	# v0.4.3 修复：场景里 HBox 默认 visible=false（防编辑器阶段误显示），运行时必须强制打开。
 	# 不打开会导致翻牌动画完全看不到（牌都 add_child 到 HBox 的孙节点 CardSlot）。
 	var hbox := $HBox
 	if hbox != null:
 		hbox.visible = true
+	# 演出期间监听 Space 跳过键
+	set_process_unhandled_input(true)
 	_show_next_pair()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	## v0.3 §6 Space 跳过键：
+	##   - 短按（按下 → 抬起 < 0.3s）：跳过当前对到下一对
+	##   - 长按（持续按住）：演出 ×0.3 加速（实际由各 await 动态读 _hold_speedup）
+	if not _is_playing:
+		return
+	if event is InputEventKey:
+		var key_event: InputEventKey = event
+		if key_event.keycode == KEY_SPACE:
+			if key_event.pressed and not key_event.echo:
+				_hold_speedup = true
+				_skip_current_pair = true  # 单击同时也跳过当前对
+			elif not key_event.pressed:
+				_hold_speedup = false
+
+
+## 当前节奏因子（长按 Space 时为 0.3，否则为 1.0）
+func _speed_factor() -> float:
+	return 0.3 if _hold_speedup else 1.0
+
+
+## 等待秒数（自动应用 _speed_factor）
+func _wait(seconds: float) -> void:
+	var dur: float = max(0.01, seconds * _speed_factor())
+	await get_tree().create_timer(dur).timeout
 
 
 func _show_next_pair() -> void:
 	if _current_index >= _results.size():
 		_finish_animation()
 		return
+
+	# 每对开始前重置跳过 flag
+	_skip_current_pair = false
 
 	var result: ClashResolver.ClashResult = _results[_current_index]
 	pair_counter.text = "第 %d/%d 对" % [_current_index + 1, _results.size()]
@@ -60,17 +111,21 @@ func _show_next_pair() -> void:
 	multiplier_label_boss.text = ""
 	versus_label.text = "..."
 	versus_label.add_theme_color_override("font_color", NEUTRAL_COLOR)
+	# 复位卡区缩放（防上一对克制方残留 1.05×）
+	player_card_area.scale = Vector2.ONE
+	boss_card_area.scale = Vector2.ONE
+	player_card_area.modulate = Color.WHITE
+	boss_card_area.modulate = Color.WHITE
 
-	# === 阶段1：双方同时"出牌背"（牌摆到对决区，但牌面朝下） ===
+	# === 阶段1：双方同时"出牌背" ===
 	var player_ui: Control = null
 	var boss_ui: Control = null
 
 	if result.player_card != null:
 		player_ui = _create_card_display(result.player_card)
 		player_card_area.add_child(player_ui)
-		# add_child 之后再 show_back —— 确保节点已就绪、_draw 不会被预设的正面状态短暂闪过
 		player_ui.show_back()
-		_play_in_animation(player_ui, true)  # 滑入动画（不翻面）
+		_play_in_animation(player_ui, true)
 	else:
 		_show_empty_slot(player_card_area, "—")
 
@@ -82,43 +137,60 @@ func _show_next_pair() -> void:
 	else:
 		_show_empty_slot(boss_card_area, "—")
 
-	# 等滑入动画完成（_play_in_animation 内部 0.35s + 一点缓冲）
-	await get_tree().create_timer(0.45).timeout
+	# 等滑入完成（_play_in_animation 0.30s + 0.05 缓冲）
+	await _wait(SLIDE_IN_DUR + 0.05)
+	if _skip_current_pair:
+		await _fast_forward_to_resolve(player_ui, boss_ui, result)
+		return
 
-	# === 阶段2：停留 0.55 秒，给玩家"对峙感"（看清两张牌背） ===
-	await get_tree().create_timer(0.55).timeout
+	# === 阶段2：牌背对峙 STANDOFF_DUR ===
+	await _wait(STANDOFF_DUR)
+	if _skip_current_pair:
+		await _fast_forward_to_resolve(player_ui, boss_ui, result)
+		return
 
-	# === 阶段3：双方同时翻面（拉长到清晰可见 + 用 await tween.finished 严格等完）===
+	# === 阶段3：双方同时翻面（_flip_card 内部 ~FLIP_DUR）===
 	var flip_tween_player: Tween = null
 	var flip_tween_boss: Tween = null
 	if player_ui != null:
 		flip_tween_player = _flip_card(player_ui)
 	if boss_ui != null:
 		flip_tween_boss = _flip_card(boss_ui)
-	# 等翻面 tween 真正跑完（防止下面 apply_cb 提前结算）
 	if flip_tween_player != null:
 		await flip_tween_player.finished
 	elif flip_tween_boss != null:
 		await flip_tween_boss.finished
 	else:
-		await get_tree().create_timer(0.5).timeout
+		await _wait(FLIP_DUR)
 
-	# === 阶段3.5：翻面完成后，**才**真正提交本对的伤害/陷阱效果 ===
-	# 这一步触发 BlindClashBattle.apply_clash_pair_at(_current_index)：
-	# - HP/护甲变更走 Combatant 信号 → 血条+伤害浮字
-	# - 陷阱触发走 trap_triggered_signal → 屏幕特效
-	# - clash_pair_resolved 把 result 同步给战斗日志
-	# 必须在翻面之后（玩家已经看到正反面）才扣血，避免观感"先掉血再翻牌"
+	# === 阶段3.5：翻面完成 → 提交本对伤害（apply_cb）===
 	if _apply_cb.is_valid():
 		_apply_cb.call(_current_index)
-		# 给一帧让 HP 浮字 / 屏幕震动等开始播放，再叠上倍率文字
 		await get_tree().process_frame
 
-	# === 阶段4：显示碰撞结果 ===
+	# === 阶段4：显示克制结果（金色边框 + 1.05× 缩放 + 屏震）===
 	_show_clash_result(result)
 
-	await get_tree().create_timer(2.0).timeout
+	# === 阶段5：结算停留 RESOLVE_DUR ===
+	await _wait(RESOLVE_DUR)
 
+	_current_index += 1
+	_show_next_pair()
+
+
+## 跳过当前对的快进路径：直接显示克制结果 + 短停留 + apply_cb，进入下一对
+func _fast_forward_to_resolve(player_ui: Control, boss_ui: Control, result: ClashResolver.ClashResult) -> void:
+	# 如果还没翻面，直接 show_front
+	if player_ui != null and player_ui.has_method("show_front"):
+		player_ui.show_front()
+	if boss_ui != null and boss_ui.has_method("show_front"):
+		boss_ui.show_front()
+	if _apply_cb.is_valid():
+		_apply_cb.call(_current_index)
+		await get_tree().process_frame
+	_show_clash_result(result)
+	# 跳过模式下停留缩短到 0.4s 让玩家瞄一眼
+	await get_tree().create_timer(0.4).timeout
 	_current_index += 1
 	_show_next_pair()
 
@@ -128,22 +200,28 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 
 	match result.clash_type:
 		"counter_player":
-			versus_label.text = "克制!"
+			# v0.3：弱化"克制!"文字 → 用 VS + 小字提示
+			versus_label.text = "VS"
 			versus_label.add_theme_color_override("font_color", COUNTER_PLAYER_COLOR)
 			multiplier_label_player.text = _format_calc(result.player_card, 1.5)
 			multiplier_label_player.add_theme_color_override("font_color", COUNTER_PLAYER_COLOR)
 			multiplier_label_boss.text = _format_calc(result.boss_card, 0.5)
 			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
+			# 克制方视觉化：金色边框 + 1.05× 缩放 + 屏震
+			_apply_counter_highlight(player_card_area)
 			_flash_border(player_card_area, COUNTER_PLAYER_COLOR)
+			_screen_shake()
 
 		"counter_boss":
-			versus_label.text = "被克制!"
+			versus_label.text = "VS"
 			versus_label.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
 			multiplier_label_player.text = _format_calc(result.player_card, 0.5)
 			multiplier_label_player.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
 			multiplier_label_boss.text = _format_calc(result.boss_card, 1.5)
 			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_PLAYER_COLOR)
+			_apply_counter_highlight(boss_card_area)
 			_flash_border(boss_card_area, COUNTER_BOSS_COLOR)
+			_screen_shake()
 
 		"neutral":
 			versus_label.text = "VS"
@@ -167,22 +245,49 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 			multiplier_label_boss.text = _format_calc(result.boss_card, 1.0) + " 直接生效"
 			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
 
-	# 陷阱触发提示
-	if result.trap_triggered and result.trap_data != null:
-		result_label.push_color(Color(1.0, 0.85, 0.2))
-		if result.trap_data.is_bluff:
-			result_label.add_text("⚡ 陷阱翻开: 虚影协议（虚张声势！）")
-		else:
-			result_label.add_text("⚡ 陷阱触发: %s!" % result.trap_data.trap_name)
-		result_label.pop()
+		"unopposed_player":
+			versus_label.text = "毫无阻力×2"
+			versus_label.add_theme_color_override("font_color", FREE_COLOR)
+			multiplier_label_player.text = _format_calc(result.player_card, 2.0) + " 毫无阻力×2"
+			multiplier_label_player.add_theme_color_override("font_color", FREE_COLOR)
+			multiplier_label_boss.text = ""
+			_apply_counter_highlight(player_card_area)
+			_screen_shake()
+
+		"unopposed_boss":
+			versus_label.text = "毫无阻力×2"
+			versus_label.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
+			multiplier_label_player.text = ""
+			multiplier_label_boss.text = _format_calc(result.boss_card, 2.0) + " 毫无阻力×2"
+			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
+			_apply_counter_highlight(boss_card_area)
+			_screen_shake()
+
+
+## 克制方视觉强化：金色边框模拟（modulate 偏金）+ 1.05× 缩放
+func _apply_counter_highlight(area: Control) -> void:
+	var tw: Tween = area.create_tween().set_parallel(true)
+	tw.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(area, "scale", Vector2(1.05, 1.05), 0.18)
+	# 借 modulate 偏金色营造金边感（无独立边框节点，简化实现）
+	tw.tween_property(area, "modulate", COUNTER_HIGHLIGHT_GOLD, 0.18)
+
+
+## 屏震：本 UI 自身位置短促抖动（非全局相机震动，避免影响 PickUI 收尾过渡）
+func _screen_shake() -> void:
+	var orig_pos: Vector2 = position
+	var tw: Tween = create_tween()
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	for i in range(5):
+		var offset := Vector2(randf_range(-6, 6), randf_range(-4, 4))
+		tw.tween_property(self, "position", orig_pos + offset, 0.04)
+	tw.tween_property(self, "position", orig_pos, 0.05)
 
 
 func _create_card_display(card: CardData) -> Control:
 	var card_ui := Control.new()
 	card_ui.set_script(CardUI)
-	# 滑入动画起点：牌正常尺寸，但放在区域外侧+透明
 	card_ui.setup(card)
-	# 对决区卡牌不应响应 hover（否则会与翻牌动画的 scale/position tween 冲突）
 	if card_ui.has_method("disable_hover"):
 		card_ui.disable_hover()
 	card_ui.modulate = Color(1.0, 1.0, 1.0, 0.0)
@@ -197,51 +302,55 @@ func _play_in_animation(card_ui: Control, is_player: bool) -> void:
 	tween.set_parallel(true)
 	tween.set_ease(Tween.EASE_OUT)
 	tween.set_trans(Tween.TRANS_CUBIC)
-	tween.tween_property(card_ui, "position", Vector2.ZERO, 0.35)
-	tween.tween_property(card_ui, "modulate:a", 1.0, 0.25)
+	tween.tween_property(card_ui, "position", Vector2.ZERO, SLIDE_IN_DUR)
+	tween.tween_property(card_ui, "modulate:a", 1.0, SLIDE_IN_DUR * 0.7)
 
 
 func _flip_card(card_ui: Control) -> Tween:
 	## 翻面动画：水平压扁→切换到正面→恢复（返回 Tween 供调用方 await tween.finished）
-	# 兜底：再保证一次"开始时是牌背"，防止外部把 card_ui 当作正面绘制
 	if card_ui.has_method("show_back"):
 		card_ui.show_back()
 	var tween := card_ui.create_tween()
 	tween.set_ease(Tween.EASE_IN_OUT)
 	tween.set_trans(Tween.TRANS_QUAD)
-	# 第一步：压扁到 0（拉长到 0.28s，明显可见）
-	tween.tween_property(card_ui, "scale:x", 0.0, 0.28)
+	# 第一步：压扁到 0
+	tween.tween_property(card_ui, "scale:x", 0.0, FLIP_DUR * 0.5)
 	# 中间切换到正面
 	tween.tween_callback(func() -> void:
 		if is_instance_valid(card_ui) and card_ui.has_method("show_front"):
 			card_ui.show_front()
 	)
-	# 第二步：还原到 1.0（露出正面，0.32s）
-	tween.tween_property(card_ui, "scale:x", 1.0, 0.32)
+	# 第二步：还原到 1.0
+	tween.tween_property(card_ui, "scale:x", 1.0, FLIP_DUR * 0.5)
 	return tween
 
 
 func _format_calc(card: CardData, multiplier: float) -> String:
 	## 生成 "数值 ×倍率 = 结果" 的计算式文本
+	## v0.3 §3.4 色弱兼容：在数值前加符号前缀（↓伤害 / ↑增益 / 🛡甲 / 🃏抽）
 	if card == null:
 		return ""
-	# 找到主数值（伤害/护甲/治疗）
 	var base_value: int = 0
 	var value_type: String = ""
+	var prefix: String = ""
 	if card.damage > 0:
 		base_value = card.damage
 		value_type = "伤害"
+		prefix = "↓"
 		if card.hits > 1:
 			value_type = "伤害×%d" % card.hits
 	elif card.armor > 0:
 		base_value = card.armor
 		value_type = "护甲"
+		prefix = "🛡"
 	elif card.heal > 0:
 		base_value = card.heal
 		value_type = "回复"
+		prefix = "↑"
 	elif card.draw_cards > 0:
 		base_value = card.draw_cards
 		value_type = "抽牌"
+		prefix = "🃏"
 	else:
 		# 无数值效果的牌（蓄力等）
 		if multiplier < 1.0:
@@ -251,9 +360,9 @@ func _format_calc(card: CardData, multiplier: float) -> String:
 	var final_value: int = ceili(float(base_value) * multiplier)
 
 	if multiplier == 1.0:
-		return "%d %s" % [base_value, value_type]
+		return "%s%d %s" % [prefix, base_value, value_type]
 	else:
-		return "%d ×%.1f = %d %s" % [base_value, multiplier, final_value, value_type]
+		return "%s%d ×%.1f = %d %s" % [prefix, base_value, multiplier, final_value, value_type]
 
 
 func _flash_border(area: Control, color: Color) -> void:
@@ -278,6 +387,12 @@ func _clear_area(area: Control) -> void:
 
 func _finish_animation() -> void:
 	_is_playing = false
-	await get_tree().create_timer(0.5).timeout
+	set_process_unhandled_input(false)
+	# 复位克制方残留 scale/modulate
+	player_card_area.scale = Vector2.ONE
+	boss_card_area.scale = Vector2.ONE
+	player_card_area.modulate = Color.WHITE
+	boss_card_area.modulate = Color.WHITE
+	await get_tree().create_timer(0.3).timeout
 	visible = false
 	clash_animation_complete.emit()

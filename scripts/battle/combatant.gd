@@ -9,13 +9,23 @@ signal hand_changed()
 signal deck_changed()
 
 var combatant_name: String = ""
-var max_hp: int = 60
-var hp: int = 60
+var max_hp: int = 25
+var hp: int = 25
 var armor: int = 0
 var energy: int = 0
-var base_energy: int = 3
-var base_draw: int = 3
-var hand_limit: int = 7
+var base_energy: int = 6    # v0.7.x-rebal：双方每回合 6 能量（4 Pick 槽 × cost 1~2 平均，留一档给 0 费多投或失误容错）
+var base_draw: int = 6      # v0.7.x-rebal：与 hand_pool_size 同步，每回合补满候选池到 6 张
+var hand_limit: int = 6     # v0.7.x-rebal：手牌池窗（hand_pool）上限 = 6，候选展示窗扩大，4 槽从中筛选
+
+# v0.7.x-rebal：手牌池窗设置（候选窗 = hand 6 张，从中 Pick 4 进入 slot）
+const HAND_POOL_SIZE: int = 6        # 候选展示窗大小
+const PICK_SLOTS: int = 4            # 实际 Pick 槽数（不变）
+const ZEROCOST_LIMIT_PER_TURN: int = 2  # 每回合 0 费上限（防止刷牌过度）
+
+# v0.7.x-rebal：本回合 0 费已用次数（每回合 _next_round 重置）
+var zerocost_used_this_turn: int = 0
+# v0.7.x-rebal：本回合 0 费使用日志（[card_id, ...]，用于全明牌契约对外广播）
+var zerocost_used_log: Array[StringName] = []
 
 # 牌组
 var deck: Array[CardData] = []  # 抽牌堆
@@ -120,3 +130,40 @@ func heal_hp(amount: int) -> void:
 
 func is_dead() -> bool:
 	return hp <= 0
+
+
+# ========================================================================
+# v0.7.x-rebal：辅助方法
+# ========================================================================
+
+## 重置每回合 0 费用计数（在 _next_round 开头调用）
+func reset_turn_counters() -> void:
+	zerocost_used_this_turn = 0
+	zerocost_used_log.clear()
+
+
+## 是否还能再使用 0 费牌（每回合上限 ZEROCOST_LIMIT_PER_TURN 次）
+func can_use_zerocost() -> bool:
+	return zerocost_used_this_turn < ZEROCOST_LIMIT_PER_TURN
+
+
+## 标记一次 0 费使用（计数 + 日志）
+func mark_zerocost_used(card_id: StringName) -> void:
+	zerocost_used_this_turn += 1
+	zerocost_used_log.append(card_id)
+
+
+## 牌库类型统计（攻 / 防 / 技 / 协 / 0费 计数）— 全明牌 perception 用
+func get_deck_type_counts() -> Dictionary:
+	var counts: Dictionary = {
+		"attack": 0, "defense": 0, "skill": 0, "protocol": 0, "zerocost": 0,
+	}
+	for c in deck:
+		if c.energy_cost == 0:
+			counts["zerocost"] += 1
+		match c.type:
+			CardData.CardType.ATTACK: counts["attack"] += 1
+			CardData.CardType.DEFENSE: counts["defense"] += 1
+			CardData.CardType.SKILL: counts["skill"] += 1
+			CardData.CardType.PROTOCOL: counts["protocol"] += 1
+	return counts

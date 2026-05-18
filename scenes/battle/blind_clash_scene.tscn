@@ -12,6 +12,7 @@
 [ext_resource type="Script" uid="uid://bjgxy8vqg8wq6" path="res://scripts/ui/deck_view_ui.gd" id="10"]
 [ext_resource type="Script" uid="uid://bmdeiw7xrbtna" path="res://scripts/ui/rules_overlay_ui.gd" id="11"]
 [ext_resource type="Script" uid="uid://dpkbhcn0ltpq5" path="res://scripts/ui/boss_thinking_overlay.gd" id="12"]
+[ext_resource type="Script" path="res://scripts/ui/matchup_hint_ui.gd" id="13"]
 
 [node name="BlindClashScene" type="Control" unique_id=1033784407]
 layout_mode = 3
@@ -151,10 +152,6 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 510.0
-offset_top = 242.0
-offset_right = -330.0
-offset_bottom = -238.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("4")
@@ -167,9 +164,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -540.0
-offset_top = -50.0
-offset_right = 360.0
-offset_bottom = 500.0
+offset_top = -190.0
+offset_right = 540.0
+offset_bottom = 360.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -389,6 +386,7 @@ grow_vertical = 2
 mouse_filter = 2
 
 [node name="QueryButtons" type="VBoxContainer" parent="UI/UIRoot" unique_id=2030110001]
+z_index = 200
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0
@@ -401,6 +399,7 @@ offset_right = -12.0
 offset_bottom = -24.0
 grow_horizontal = 0
 grow_vertical = 0
+mouse_filter = 1
 theme_override_constants/separation = 12
 
 [node name="PlayerDeckBtn" type="Button" parent="UI/UIRoot/QueryButtons" unique_id=2030110002]
@@ -420,6 +419,20 @@ custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "规则介绍 (?)"
 text = "?"
+
+[node name="MatchupHintUI" type="Control" parent="UI/UIRoot" unique_id=2030110020]
+z_index = 50
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -196.0
+offset_right = 196.0
+offset_bottom = -16.0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("13")
 
 [node name="PlayerDeckView" type="Control" parent="UI" unique_id=2030110010]
 layout_mode = 3

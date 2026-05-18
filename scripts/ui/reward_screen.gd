@@ -1,92 +1,682 @@
 extends Control
-## 层间奖励界面 — 击败 Boss 后三选一加牌
+## RewardScreen — GDD-08 升级阶段 UI（v0.8.2 简化版）
+## 布局：上方 Boss 完整牌库 ｜ 中间 [左规则 + 4 张候选新牌 + 右规则] ｜ 下方玩家完整牌库
+## 候选 = 4 张新卡（从全卡池随机），用来替换牌库中的任意一张
 
-signal card_chosen(card: CardData)
-signal skipped()
+signal reward_completed()
 
-@onready var title_label: Label = $Panel/VBox/TitleLabel
-@onready var cards_container: HBoxContainer = $Panel/VBox/CardsContainer
-@onready var skip_btn: Button = $Panel/VBox/SkipButton
+const CARD_UI_SCRIPT := preload("res://scripts/ui/card_ui.gd")
+const DECK_CARD_SCALE: float = 0.7   # 牌库展示缩放（200x280 → 140x196）
+const CANDIDATE_CARD_SCALE: float = 0.85  # 候选牌缩放
 
-var _available_cards: Array[CardData] = []
+# 步骤枚举
+enum Step { CANDIDATES, PICK_FOR_SELF, PICK_FOR_BOSS, SUMMARY }
+
+var current_step: Step = Step.CANDIDATES
+var candidates: Array[CardData] = []         # 4 张新卡候选
+var self_pick: CardData = null
+var boss_pick: CardData = null
+var remaining_candidates: Array[CardData] = []
+
+# 引用
+var _run_state: RunState = null
+var _player_deck: Array[CardData] = []
+var _boss_deck: Array[CardData] = []
+
+# 当前替换上下文（"" = 未在替换模式）
+var _replace_side: String = ""
+
+# UI 节点
+var _dim_bg: ColorRect
+var _boss_deck_title: Label
+var _boss_deck_grid: HBoxContainer
+var _player_deck_title: Label
+var _player_deck_grid: HBoxContainer
+var _candidates_container: HBoxContainer
+var _step_indicator: Label
+var _banner: Label
+var _summary_panel: Control
 
 
 func _ready() -> void:
-	skip_btn.pressed.connect(func(): skipped.emit(); visible = false)
+	anchor_right = 1.0
+	anchor_bottom = 1.0
 	visible = false
+	z_index = 90
+	_build_ui()
 
 
-func show_rewards(cards: Array[CardData], round_num: int = 1) -> void:
-	_available_cards = cards
-	title_label.text = "选择奖励 (%d/2)" % round_num
-	_populate_cards()
+func _build_ui() -> void:
+	# 背景遮罩
+	_dim_bg = ColorRect.new()
+	_dim_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dim_bg.color = Color(0, 0, 0, 0.94)
+	_dim_bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_dim_bg)
+
+	# ===== 全屏三段式布局 =====
+	var root_vbox := VBoxContainer.new()
+	root_vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root_vbox.offset_left = 30
+	root_vbox.offset_right = -30
+	root_vbox.offset_top = 15
+	root_vbox.offset_bottom = -15
+	root_vbox.add_theme_constant_override("separation", 6)
+	add_child(root_vbox)
+
+	# ----- 上方：Boss 完整牌库 -----
+	_boss_deck_title = Label.new()
+	_boss_deck_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_deck_title.add_theme_font_size_override("font_size", 18)
+	_boss_deck_title.add_theme_color_override("font_color", Color(1.0, 0.35, 0.35))
+	_boss_deck_title.text = "MIRROR 牌库"
+	root_vbox.add_child(_boss_deck_title)
+
+	var boss_scroll := ScrollContainer.new()
+	# 牌高度 280*0.7=196，加上滚动条预留 + 上下 padding
+	boss_scroll.custom_minimum_size = Vector2(0, 220)
+	boss_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	boss_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root_vbox.add_child(boss_scroll)
+
+	# CenterContainer 让牌库居中（牌不多时）
+	var boss_center := CenterContainer.new()
+	boss_center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	boss_scroll.add_child(boss_center)
+
+	_boss_deck_grid = HBoxContainer.new()
+	_boss_deck_grid.add_theme_constant_override("separation", 8)
+	_boss_deck_grid.alignment = BoxContainer.ALIGNMENT_CENTER
+	boss_center.add_child(_boss_deck_grid)
+
+	# ----- 中间：[左规则 + 候选 + 右规则] -----
+	var center_h := HBoxContainer.new()
+	center_h.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center_h.add_theme_constant_override("separation", 20)
+	center_h.alignment = BoxContainer.ALIGNMENT_CENTER
+	root_vbox.add_child(center_h)
+
+	# 左侧规则面板（固定大小，不拉伸）
+	var left_rules := _build_rule_panel(true)
+	left_rules.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	center_h.add_child(left_rules)
+
+	# 中间候选区
+	var center_vbox := VBoxContainer.new()
+	center_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	center_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center_vbox.add_theme_constant_override("separation", 8)
+	center_h.add_child(center_vbox)
+
+	_step_indicator = Label.new()
+	_step_indicator.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_step_indicator.add_theme_font_size_override("font_size", 26)
+	_step_indicator.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	center_vbox.add_child(_step_indicator)
+
+	_banner = Label.new()
+	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner.add_theme_font_size_override("font_size", 18)
+	_banner.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	center_vbox.add_child(_banner)
+
+	_candidates_container = HBoxContainer.new()
+	_candidates_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	_candidates_container.add_theme_constant_override("separation", 18)
+	_candidates_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center_vbox.add_child(_candidates_container)
+
+	# 右侧规则面板（固定大小，不拉伸）
+	var right_rules := _build_rule_panel(false)
+	right_rules.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	center_h.add_child(right_rules)
+
+	# ----- 下方：玩家完整牌库 -----
+	var player_scroll := ScrollContainer.new()
+	player_scroll.custom_minimum_size = Vector2(0, 220)
+	player_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	player_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root_vbox.add_child(player_scroll)
+
+	var player_center := CenterContainer.new()
+	player_center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_scroll.add_child(player_center)
+
+	_player_deck_grid = HBoxContainer.new()
+	_player_deck_grid.add_theme_constant_override("separation", 8)
+	_player_deck_grid.alignment = BoxContainer.ALIGNMENT_CENTER
+	player_center.add_child(_player_deck_grid)
+
+	_player_deck_title = Label.new()
+	_player_deck_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_player_deck_title.add_theme_font_size_override("font_size", 18)
+	_player_deck_title.add_theme_color_override("font_color", Color(0.25, 0.85, 1.0))
+	_player_deck_title.text = "我方牌库"
+	root_vbox.add_child(_player_deck_title)
+
+	# ----- 升级总结面板（叠加层） -----
+	_summary_panel = Control.new()
+	_summary_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_summary_panel.visible = false
+	_summary_panel.z_index = 95
+	add_child(_summary_panel)
+
+
+## 构造左/右规则说明面板
+func _build_rule_panel(is_left: bool) -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(220, 0)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.1, 0.16, 0.85)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.border_color = Color(0.3, 0.5, 0.7, 0.6)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	panel.add_theme_stylebox_override("panel", sb)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 18)
+
+	var body := RichTextLabel.new()
+	body.bbcode_enabled = true
+	body.fit_content = true
+	body.scroll_active = false
+	body.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	body.custom_minimum_size = Vector2(196, 0)
+	body.add_theme_font_size_override("normal_font_size", 14)
+
+	if is_left:
+		title.text = "⚡ 互换规则"
+		title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
+		body.text = (
+			"[color=#ffcc66]· 每轮战斗结束[/color]\n"
+			+ "[color=#cccccc]胜方与败方交换牌库[/color]\n\n"
+			+ "[color=#ffcc66]· 你现在的牌库[/color]\n"
+			+ "[color=#cccccc]是 MIRROR 上一轮的牌库[/color]\n\n"
+			+ "[color=#ffcc66]· MIRROR 现在的牌库[/color]\n"
+			+ "[color=#cccccc]是你上一轮的牌库[/color]\n\n"
+			+ "[color=#88ccff]→ HP/能量已重置[/color]\n"
+			+ "[color=#88ccff]→ Boss HP 每轮+3[/color]"
+		)
+	else:
+		title.text = "🛠 升级规则"
+		title.add_theme_color_override("font_color", Color(0.5, 0.95, 0.6))
+		body.text = (
+			"[color=#aaffaa]· 4 张候选新卡[/color]\n"
+			+ "[color=#cccccc]每轮抽取 4 张备用[/color]\n\n"
+			+ "[color=#aaffaa]· 第 1 步[/color]\n"
+			+ "[color=#cccccc]为自己选 1 张新卡[/color]\n"
+			+ "[color=#cccccc]点击我方牌库中的牌替换[/color]\n\n"
+			+ "[color=#aaffaa]· 第 2 步[/color]\n"
+			+ "[color=#cccccc]为 MIRROR 选 1 张新卡[/color]\n"
+			+ "[color=#cccccc]点击对方牌库中的牌替换[/color]\n\n"
+			+ "[color=#ff8866]⚠ 双方牌库完全开放[/color]\n"
+			+ "[color=#ff8866]互相可见，慎重选择[/color]"
+		)
+
+	vbox.add_child(title)
+	vbox.add_child(body)
+	return panel
+
+
+## 激活奖励界面
+func activate(player_deck: Array[CardData], boss_deck: Array[CardData]) -> void:
+	_player_deck = player_deck
+	_boss_deck = boss_deck
+	_run_state = get_node_or_null("/root/RunState")
+
+	# 抽 4 张随机新卡作为候选
+	candidates = _draw_random_card_candidates(4)
+
+	self_pick = null
+	boss_pick = null
+	remaining_candidates.clear()
+	_replace_side = ""
+
+	current_step = Step.CANDIDATES
 	visible = true
+	_refresh_deck_grids()
+	_show_candidates()
 
 
-func _populate_cards() -> void:
-	for child in cards_container.get_children():
+## 从 CardDatabase 取升级专属池（GDD-08 v0.8.3：按 round 返回每关 4 张专属升级牌）
+func _draw_random_card_candidates(count: int) -> Array[CardData]:
+	var card_db: Node = get_node_or_null("/root/CardDatabase")
+	if card_db == null:
+		return []
+	# v0.8.3：从 RunState 读当前 round_index 并传给池函数
+	# RunState.round_index 在 execute_swap 已 +1（即"即将开始的下一轮"号）
+	var run_state_node: Node = get_node_or_null("/root/RunState")
+	var round_idx: int = 2  # 默认按 R1 击败后处理
+	if run_state_node != null:
+		round_idx = run_state_node.round_index
+	var pool: Array[CardData] = card_db.get_upgrade_card_pool(round_idx)
+	pool.shuffle()
+	var result: Array[CardData] = []
+	for i in range(mini(count, pool.size())):
+		result.append(pool[i])
+	return result
+
+
+# ===== 牌库网格（完整卡面） =====
+
+func _refresh_deck_grids() -> void:
+	_refresh_deck_grid(_boss_deck_grid, _boss_deck, "boss")
+	_refresh_deck_grid(_player_deck_grid, _player_deck, "player")
+	_update_deck_highlights()
+
+
+func _refresh_deck_grid(grid: HBoxContainer, deck: Array[CardData], side: String) -> void:
+	for child in grid.get_children():
 		child.queue_free()
 
-	for card in _available_cards:
-		var card_panel := PanelContainer.new()
-		card_panel.custom_minimum_size = Vector2(180, 220)
+	var is_replace_mode: bool = (_replace_side == side)
 
-		var vbox := VBoxContainer.new()
-		card_panel.add_child(vbox)
-
-		# 类型标签
-		var type_label := Label.new()
-		var type_colors: Dictionary = {
-			CardData.CardType.ATTACK: "red",
-			CardData.CardType.DEFENSE: "cyan",
-			CardData.CardType.SKILL: "green",
-			CardData.CardType.PROTOCOL: "yellow",
-		}
-		var type_names: Dictionary = {
-			CardData.CardType.ATTACK: "攻击",
-			CardData.CardType.DEFENSE: "防御",
-			CardData.CardType.SKILL: "技能",
-			CardData.CardType.PROTOCOL: "协议",
-		}
-		type_label.text = type_names.get(card.type, "?")
-		type_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		type_label.add_theme_font_size_override("font_size", 11)
-		vbox.add_child(type_label)
-
-		# 名称
-		var name_label := Label.new()
-		name_label.text = card.card_name
-		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_label.add_theme_font_size_override("font_size", 16)
-		vbox.add_child(name_label)
-
-		# 能量
-		var cost_label := Label.new()
-		cost_label.text = "能量: %d" % card.energy_cost
-		cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		vbox.add_child(cost_label)
-
-		# 分隔
-		var sep := HSeparator.new()
-		vbox.add_child(sep)
-
-		# 效果描述
-		var desc_label := Label.new()
-		desc_label.text = card.description
-		desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		vbox.add_child(desc_label)
-
-		# 选择按钮
-		var btn := Button.new()
-		btn.text = "选择"
-		btn.size_flags_vertical = Control.SIZE_SHRINK_END
-		btn.pressed.connect(_on_card_selected.bind(card))
-		vbox.add_child(btn)
-
-		cards_container.add_child(card_panel)
+	for i in range(deck.size()):
+		var card: CardData = deck[i]
+		var wrapper := _create_deck_card_full(card, i, side, is_replace_mode)
+		grid.add_child(wrapper)
 
 
-func _on_card_selected(card: CardData) -> void:
-	card_chosen.emit(card)
+## 创建一张完整卡面（缩放，不截断、不变形）
+## 关键：通过 card_clicked 信号接收点击（CardUI 自身处理鼠标命中），而不是 wrapper.gui_input
+##       setup 内部会把 pivot_offset 设为中心，必须在 setup **之后** 强制改为 (0,0)
+func _create_deck_card_full(card: CardData, deck_index: int, side: String,
+		clickable: bool) -> Control:
+	var card_w: float = 200.0 * DECK_CARD_SCALE
+	var card_h: float = 280.0 * DECK_CARD_SCALE
+
+	var wrapper := Control.new()
+	wrapper.custom_minimum_size = Vector2(card_w, card_h)
+	wrapper.size = Vector2(card_w, card_h)
+	wrapper.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	wrapper.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wrapper.mouse_filter = Control.MOUSE_FILTER_PASS  # 让 CardUI 自己接收点击
+	wrapper.clip_contents = false
+
+	var card_ui := Control.new()
+	card_ui.set_script(CARD_UI_SCRIPT)
+	wrapper.add_child(card_ui)
+	card_ui.position = Vector2.ZERO
+	card_ui.scale = Vector2(DECK_CARD_SCALE, DECK_CARD_SCALE)
+	card_ui.setup(card, Vector2.ZERO)
+	# setup() 内部强制 pivot=中心，必须在之后覆盖为左上角，否则缩放后整体偏移
+	card_ui.pivot_offset = Vector2.ZERO
+	card_ui.set("_hover_disabled", true)
+
+	# 通过信号接收点击（CardUI 自己处理 hit-test，已支持缩放容差）
+	if clickable:
+		card_ui.card_clicked.connect(func(_card: CardData) -> void:
+			_on_deck_card_clicked(deck_index, side)
+		)
+
+		# v0.8.2：可点击牌也改为金边（不覆盖卡面）+ 闪烁呼吸
+		var hilite_border := _make_glow_border(card_w, card_h, Color(1.0, 0.85, 0.2), 3.0)
+		wrapper.add_child(hilite_border)
+		var t := wrapper.create_tween().set_loops()
+		t.tween_property(hilite_border, "modulate:a", 1.0, 0.6)
+		t.tween_property(hilite_border, "modulate:a", 0.45, 0.6)
+
+	# v0.8.2：升级牌（up_* id）右上角贴静止徽章（替换入牌库后的标记）
+	if String(card.id).begins_with("up_"):
+		var static_badge := _make_upgrade_badge(false)
+		# 缩放到与 deck card 比例匹配（候选 0.85→ deck 0.7，徽章按 deck 卡面相对大小再调一点）
+		var badge_scale: float = DECK_CARD_SCALE / CANDIDATE_CARD_SCALE  # ≈0.82
+		static_badge.scale = Vector2(badge_scale, badge_scale)
+		# 右上角：徽章中心对准卡牌右上角顶点附近
+		static_badge.position = Vector2(card_w - 22 * badge_scale, -8 * badge_scale)
+		wrapper.add_child(static_badge)
+
+	return wrapper
+
+
+func _update_deck_highlights() -> void:
+	if _replace_side == "boss":
+		_boss_deck_title.text = "⬇ 点击 MIRROR 牌库中的牌完成替换 ⬇"
+		_boss_deck_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		_player_deck_title.text = "我方牌库"
+		_player_deck_title.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6))
+	elif _replace_side == "player":
+		_player_deck_title.text = "⬆ 点击我方牌库中的牌完成替换 ⬆"
+		_player_deck_title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		_boss_deck_title.text = "MIRROR 牌库"
+		_boss_deck_title.add_theme_color_override("font_color", Color(0.4, 0.5, 0.6))
+	else:
+		_boss_deck_title.text = "MIRROR 牌库"
+		_boss_deck_title.add_theme_color_override("font_color", Color(1.0, 0.35, 0.35))
+		_player_deck_title.text = "我方牌库"
+		_player_deck_title.add_theme_color_override("font_color", Color(0.25, 0.85, 1.0))
+
+
+func _on_deck_card_clicked(deck_index: int, side: String) -> void:
+	if _replace_side != side:
+		return
+	var deck: Array[CardData] = _player_deck if side == "player" else _boss_deck
+	if deck_index < 0 or deck_index >= deck.size():
+		return
+	_apply_replace(deck_index, side)
+
+
+# ===== Step A：候选展示 =====
+
+func _show_candidates() -> void:
+	_step_indicator.text = "升级阶段"
+	_banner.text = "4 张新卡候选 — 点击 1 张作为你的升级"
+	_clear_candidates()
+	for i in range(candidates.size()):
+		var card: CardData = candidates[i]
+		var node := _create_candidate_card(card, i)
+		_candidates_container.add_child(node)
+
+
+## 用 CardUI 创建候选新卡（完整卡面，可点击，不变形不截断）
+## 通过 card_clicked 信号接收点击；setup 之后必须强制 pivot_offset=(0,0)
+func _create_candidate_card(card: CardData, index: int) -> Control:
+	var card_w: float = 200.0 * CANDIDATE_CARD_SCALE
+	var card_h: float = 280.0 * CANDIDATE_CARD_SCALE
+	var wrapper := Control.new()
+	wrapper.custom_minimum_size = Vector2(card_w, card_h)
+	wrapper.size = Vector2(card_w, card_h)
+	wrapper.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	wrapper.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+	wrapper.clip_contents = false
+
+	var card_ui := Control.new()
+	card_ui.set_script(CARD_UI_SCRIPT)
+	wrapper.add_child(card_ui)
+	card_ui.position = Vector2.ZERO
+	card_ui.scale = Vector2(CANDIDATE_CARD_SCALE, CANDIDATE_CARD_SCALE)
+	card_ui.setup(card, Vector2.ZERO)
+	# setup() 内部强制 pivot=中心，必须在之后覆盖为左上角
+	card_ui.pivot_offset = Vector2.ZERO
+	card_ui.set("_hover_disabled", true)
+
+	# 通过 card_clicked 信号接收点击
+	card_ui.card_clicked.connect(func(_card: CardData) -> void:
+		_on_candidate_selected(index)
+	)
+
+	# v0.8.2：升级徽章（右上角外凸 ⌀32px），呼吸闪烁
+	var badge := _make_upgrade_badge(true)
+	# 定位到卡牌右上角，外凸（中心对齐到卡牌右上角顶点）
+	badge.position = Vector2(card_w - 22, -10)
+	wrapper.add_child(badge)
+
+	return wrapper
+
+
+## 创建升级徽章（金色圆 + ↑UP 字样），用于标识"升级牌"
+## @param breathing true=候选阶段呼吸闪烁；false=替换入牌库后静止
+## 自动设置 z_index、pivot_offset，调用方只需 add_child 并设置 position
+func _make_upgrade_badge(breathing: bool) -> Control:
+	const BADGE_SIZE: float = 32.0
+	var badge := Control.new()
+	badge.size = Vector2(BADGE_SIZE, BADGE_SIZE)
+	badge.custom_minimum_size = Vector2(BADGE_SIZE, BADGE_SIZE)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.z_index = 5  # 浮在卡面之上
+	# pivot 设为徽章中心，让缩放呼吸从中心进行
+	badge.pivot_offset = Vector2(BADGE_SIZE / 2.0, BADGE_SIZE / 2.0)
+
+	# 金色圆背景（StyleBoxFlat 圆角全 = 半径）
+	var bg := Panel.new()
+	bg.size = Vector2(BADGE_SIZE, BADGE_SIZE)
+	bg.position = Vector2.ZERO
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1.0, 0.78, 0.18, 1.0)
+	sb.set_corner_radius_all(int(BADGE_SIZE / 2.0))
+	sb.set_border_width_all(2)
+	sb.border_color = Color(0.4, 0.25, 0.05, 1.0)
+	sb.shadow_color = Color(1.0, 0.85, 0.2, 0.5)
+	sb.shadow_size = 5
+	bg.add_theme_stylebox_override("panel", sb)
+	badge.add_child(bg)
+
+	# 中心 "↑UP" 字样
+	var label := Label.new()
+	label.text = "↑UP"
+	label.size = Vector2(BADGE_SIZE, BADGE_SIZE)
+	label.position = Vector2.ZERO
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(0.15, 0.08, 0.0))
+	label.add_theme_color_override("font_outline_color", Color(1.0, 0.95, 0.7))
+	label.add_theme_constant_override("outline_size", 1)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(label)
+
+	# 呼吸闪烁（仅候选阶段）：scale 1.0 ↔ 1.18 + alpha 1.0 ↔ 0.7
+	if breathing:
+		var t := badge.create_tween().set_loops()
+		t.set_parallel(true)
+		t.tween_property(badge, "scale", Vector2(1.18, 1.18), 0.6)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		t.tween_property(badge, "modulate:a", 0.72, 0.6)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		t.chain().set_parallel(true)
+		t.tween_property(badge, "scale", Vector2(1.0, 1.0), 0.6)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		t.tween_property(badge, "modulate:a", 1.0, 0.6)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	return badge
+
+
+## 创建一个"只画 4 条边"的金色描边控件（不覆盖卡面）
+## 用 4 个 ColorRect 拼边框：上 / 下 / 左 / 右
+func _make_glow_border(w: float, h: float, color: Color, thickness: float = 3.0) -> Control:
+	var border := Control.new()
+	border.custom_minimum_size = Vector2(w, h)
+	border.size = Vector2(w, h)
+	border.position = Vector2.ZERO
+	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# 上边
+	var top := ColorRect.new()
+	top.color = color
+	top.position = Vector2.ZERO
+	top.size = Vector2(w, thickness)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	border.add_child(top)
+
+	# 下边
+	var bottom := ColorRect.new()
+	bottom.color = color
+	bottom.position = Vector2(0, h - thickness)
+	bottom.size = Vector2(w, thickness)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	border.add_child(bottom)
+
+	# 左边
+	var left := ColorRect.new()
+	left.color = color
+	left.position = Vector2.ZERO
+	left.size = Vector2(thickness, h)
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	border.add_child(left)
+
+	# 右边
+	var right := ColorRect.new()
+	right.color = color
+	right.position = Vector2(w - thickness, 0)
+	right.size = Vector2(thickness, h)
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	border.add_child(right)
+
+	return border
+
+
+# ===== Step B：玩家自选 =====
+
+func _on_candidate_selected(index: int) -> void:
+	if current_step == Step.CANDIDATES:
+		current_step = Step.PICK_FOR_SELF
+		_on_self_pick(index)
+	elif current_step == Step.PICK_FOR_SELF:
+		_on_self_pick(index)
+	elif current_step == Step.PICK_FOR_BOSS:
+		_on_boss_pick(index)
+
+
+func _on_self_pick(index: int) -> void:
+	if index < 0 or index >= candidates.size():
+		return
+	self_pick = candidates[index]
+	_step_indicator.text = "第 1 步 / 共 2 步"
+	_banner.text = "你将获得「%s」→ 点击下方我方牌库中要被替换的牌" % self_pick.card_name
+
+	remaining_candidates.clear()
+	for i in range(candidates.size()):
+		if i != index:
+			remaining_candidates.append(candidates[i])
+
+	# 进入替换模式：高亮玩家牌库
+	_replace_side = "player"
+	_clear_candidates()
+	_refresh_deck_grids()
+
+
+# ===== Step C：给 MIRROR 选 =====
+
+func _go_to_boss_pick_step() -> void:
+	current_step = Step.PICK_FOR_BOSS
+	_step_indicator.text = "第 2 步 / 共 2 步"
+	_banner.text = "为 MIRROR 选 1 张新卡"
+	_replace_side = ""
+	_refresh_deck_grids()
+	_clear_candidates()
+	for i in range(remaining_candidates.size()):
+		var card: CardData = remaining_candidates[i]
+		var node := _create_candidate_card(card, i)
+		_candidates_container.add_child(node)
+
+
+func _on_boss_pick(index: int) -> void:
+	if index < 0 or index >= remaining_candidates.size():
+		return
+	boss_pick = remaining_candidates[index]
+	_banner.text = "MIRROR 将获得「%s」→ 点击上方 MIRROR 牌库中要被替换的牌" % boss_pick.card_name
+	_replace_side = "boss"
+	_clear_candidates()
+	_refresh_deck_grids()
+
+
+# ===== 替换逻辑 =====
+
+func _apply_replace(deck_index: int, side: String) -> void:
+	if side == "player" and self_pick != null:
+		_player_deck[deck_index] = self_pick.duplicate()
+	elif side == "boss" and boss_pick != null:
+		_boss_deck[deck_index] = boss_pick.duplicate()
+
+	_replace_side = ""
+	_refresh_deck_grids()
+
+	if side == "player":
+		_go_to_boss_pick_step()
+	else:
+		_go_to_summary()
+
+
+# ===== Step D：升级总结 =====
+
+func _go_to_summary() -> void:
+	current_step = Step.SUMMARY
+	_step_indicator.text = "升级完成 — 准备下一轮"
+	_banner.text = ""
+	_clear_candidates()
+	_replace_side = ""
+	_refresh_deck_grids()
+
+	_build_summary_panel()
+
+
+func _build_summary_panel() -> void:
+	for child in _summary_panel.get_children():
+		child.queue_free()
+
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0, 0, 0, 0.7)
+	_summary_panel.add_child(bg)
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_preset(Control.PRESET_CENTER)
+	vbox.offset_left = -400
+	vbox.offset_top = -200
+	vbox.offset_right = 400
+	vbox.offset_bottom = 200
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 16)
+	_summary_panel.add_child(vbox)
+
+	var self_label := Label.new()
+	self_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	self_label.add_theme_font_size_override("font_size", 22)
+	self_label.add_theme_color_override("font_color", Color(0.25, 0.85, 1.0))
+	self_label.text = "你的新牌：%s" % (self_pick.card_name if self_pick != null else "无")
+	vbox.add_child(self_label)
+
+	var boss_label := Label.new()
+	boss_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_label.add_theme_font_size_override("font_size", 22)
+	boss_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+	boss_label.text = "MIRROR 的新牌：%s" % (boss_pick.card_name if boss_pick != null else "无")
+	vbox.add_child(boss_label)
+
+	var fight_btn := Button.new()
+	fight_btn.text = "⚡ 开战！"
+	fight_btn.add_theme_font_size_override("font_size", 28)
+	fight_btn.custom_minimum_size = Vector2(200, 60)
+	fight_btn.pressed.connect(_on_fight_pressed)
+	vbox.add_child(fight_btn)
+
+	_summary_panel.visible = true
+
+
+func _on_fight_pressed() -> void:
 	visible = false
+	_summary_panel.visible = false
+	reward_completed.emit()
+
+
+# ===== 工具 =====
+
+func _clear_candidates() -> void:
+	for child in _candidates_container.get_children():
+		child.queue_free()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event is InputEventKey and event.pressed:
+		match event.keycode:
+			KEY_ESCAPE:
+				if _replace_side != "":
+					_replace_side = ""
+					_refresh_deck_grids()
+					if current_step == Step.PICK_FOR_SELF:
+						_banner.text = "4 张新卡候选 — 点击 1 张作为你的升级"
+						current_step = Step.CANDIDATES
+						_show_candidates()
+					elif current_step == Step.PICK_FOR_BOSS:
+						_banner.text = "为 MIRROR 选 1 张新卡"
+						_clear_candidates()
+						for i in range(remaining_candidates.size()):
+							var c: CardData = remaining_candidates[i]
+							var node := _create_candidate_card(c, i)
+							_candidates_container.add_child(node)
+					get_viewport().set_input_as_handled()
