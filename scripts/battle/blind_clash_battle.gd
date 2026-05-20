@@ -565,7 +565,8 @@ func apply_clash_pair_at(index: int) -> bool:
 		var bound_zero: CardData = player_bound_zero_cards.get(index, null)
 		# v0.4.3 hotfix-4：把绑定 0 费牌写入 ClashResult，UI 据此展示"+抽牌""+伤害"等绑定效果
 		result.player_bound_zero = bound_zero
-		_resolve_card_with_multiplier(result.player_card, player, boss, result.player_multiplier, bound_zero)
+		# v0.9.3：玩家方 2:2 平衡 → 倍率后非零字段 +1（balanced_bonus 标记）
+		_resolve_card_with_multiplier(result.player_card, player, boss, result.player_multiplier, bound_zero, result.balanced_bonus)
 
 	# 结算Boss牌效果（如果未被陷阱中断）
 	if result.boss_card != null and result.boss_multiplier > 0:
@@ -594,7 +595,7 @@ func apply_clash_pair_at(index: int) -> bool:
 
 # ===== 内部逻辑 =====
 
-func _resolve_card_with_multiplier(card: CardData, caster: Combatant, target: Combatant, multiplier: float, bound_zero: CardData) -> void:
+func _resolve_card_with_multiplier(card: CardData, caster: Combatant, target: Combatant, multiplier: float, bound_zero: CardData, balanced_plus_one: bool = false) -> void:
 	# 合并绑定的0费牌效果
 	var total_damage: int = card.damage
 	var total_armor: int = card.armor
@@ -610,6 +611,9 @@ func _resolve_card_with_multiplier(card: CardData, caster: Combatant, target: Co
 	# 应用倍率
 	if total_damage > 0:
 		var final_damage: int = ClashResolver.apply_multiplier_int(total_damage, multiplier)
+		# v0.9.3：玩家方 2:2 平衡 → 倍率后伤害 +1（仅原本 dmg>0 的牌）
+		if balanced_plus_one:
+			final_damage += 1
 		final_damage += caster.all_attack_bonus + caster.next_attack_bonus
 		caster.next_attack_bonus = 0
 		var ignore_armor: bool = card.ignore_armor or (bound_zero != null and bound_zero.ignore_armor)
@@ -617,13 +621,21 @@ func _resolve_card_with_multiplier(card: CardData, caster: Combatant, target: Co
 			target.take_damage(final_damage, ignore_armor)
 
 	if total_armor > 0:
-		caster.gain_armor(ClashResolver.apply_multiplier_int(total_armor, multiplier))
+		var final_armor: int = ClashResolver.apply_multiplier_int(total_armor, multiplier)
+		# v0.9.3：玩家方 2:2 平衡 → 倍率后护甲 +1（仅原本 armor>0 的牌）
+		if balanced_plus_one:
+			final_armor += 1
+		caster.gain_armor(final_armor)
 
 	if total_draw > 0:
 		caster.draw_cards(ClashResolver.apply_multiplier_int(total_draw, multiplier))
 
 	if total_heal > 0:
-		caster.heal_hp(ClashResolver.apply_multiplier_int(total_heal, multiplier))
+		var final_heal: int = ClashResolver.apply_multiplier_int(total_heal, multiplier)
+		# v0.9.3：玩家方 2:2 平衡 → 倍率后治疗 +1（仅原本 heal>0 的牌）
+		if balanced_plus_one:
+			final_heal += 1
+		caster.heal_hp(final_heal)
 
 	# 状态类效果（受减半可能失效）
 	if card.grants_charge:
@@ -851,6 +863,11 @@ func _decay_disrupted_for_new_round() -> void:
 func debug_kill_boss() -> void:
 	boss.hp = 0
 	_end_battle(true)
+
+## v0.8.3 调试接口：玩家秒杀，触发失败结算页（F2 快捷键）
+func debug_kill_player() -> void:
+	player.hp = 0
+	_end_battle(false)
 
 func debug_fill_constraints() -> void:
 	constraint_resource = 10
@@ -1625,7 +1642,8 @@ func apply_bp_clash_pair_at(index: int) -> bool:
 
 	# 应用结算（玩家牌效果）
 	if result.player_card != null and result.player_multiplier > 0:
-		_resolve_card_with_multiplier(result.player_card, player, boss, result.player_multiplier, null)
+		# v0.9.3：玩家方 2:2 平衡 → 倍率后非零字段 +1
+		_resolve_card_with_multiplier(result.player_card, player, boss, result.player_multiplier, null, result.balanced_bonus)
 	# 应用结算（Boss 牌效果）
 	if result.boss_card != null and result.boss_multiplier > 0:
 		_resolve_card_with_multiplier(result.boss_card, boss, player, result.boss_multiplier, null)

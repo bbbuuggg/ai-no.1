@@ -25,6 +25,11 @@ func reset_for_new_run() -> void:
 	upgrade_history.clear()
 	_structural_used_player.clear()
 	_structural_used_boss.clear()
+	# v0.9.4：清理上一 run 自调升级牌注册（避免 id 冲突）
+	if Engine.has_singleton("CardDatabase") or get_node_or_null("/root/CardDatabase") != null:
+		var db: Node = get_node_or_null("/root/CardDatabase")
+		if db != null and db.has_method("clear_runtime_cards"):
+			db.clear_runtime_cards()
 
 
 ## 互换前置于升级：胜利后先调用此函数执行互换

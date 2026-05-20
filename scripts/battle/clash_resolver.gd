@@ -44,6 +44,16 @@ static func resolve_clash(player_cards: Array[CardData], boss_cards: Array[CardD
 
 	# v0.6.0：仅对玩家牌组检查 2:2 平衡（A2 保底版只奖励玩家平衡出牌）
 	var player_balanced: bool = ElementHelper.is_balanced_polarity(player_cards)
+	# v0.9.4 调试：打印实际触发情况，便于排查 bug
+	if player_balanced:
+		print("[ClashResolver] ⚡ 玩家 2:2 平衡触发！每张玩家牌效果倍率后 +1")
+	else:
+		var pol_count: Dictionary = ElementHelper.count_polarity(player_cards)
+		print("[ClashResolver] 玩家 2:2 平衡未触发：light=%d dark=%d none=%d（需 2 光 2 暗）" % [
+			int(pol_count.get("light", 0)),
+			int(pol_count.get("dark", 0)),
+			int(pol_count.get("none", 0)),
+		])
 
 	for i in range(max_pairs):
 		var result := ClashResult.new()
@@ -59,21 +69,25 @@ static func resolve_clash(player_cards: Array[CardData], boss_cards: Array[CardD
 				result.boss_card = b_card
 				var counter: int = get_counter_result(p_card, b_card)
 				if counter == 1:
-					if player_balanced:
-						result.player_multiplier = 2.0
-						result.balanced_bonus = true
-					else:
-						result.player_multiplier = 1.5
-					result.boss_multiplier = 0.5
+					# v0.9.3：旧 2:2 ×2.0 规则废除，改为"倍率后非零字段 +1"（在 BlindClashBattle._resolve_card_with_multiplier 应用）
+					# balanced_bonus 标记仍保留，供 UI 显示"⚡ 2:2 加成"和实际结算时识别该 +1
+					# v0.9.4 v5：克制单边奖励（克制方 ×1.5 / 被克方 ×1.0 满效果）
+					#   旧 1.5/0.5（3× 价值差）→ 玩家"只看克制不看数值"
+					#   新 1.5/1.0（1.5× 价值差）→ 被克方靠 ≥1.5× 数值即可扳回，玩家必须读牌
+					result.player_multiplier = 1.5
+					result.boss_multiplier = 1.0
 					result.clash_type = "counter_player"
 				elif counter == -1:
-					result.player_multiplier = 0.5
+					result.player_multiplier = 1.0
 					result.boss_multiplier = 1.5
 					result.clash_type = "counter_boss"
 				else:
 					result.player_multiplier = 1.0
 					result.boss_multiplier = 1.0
 					result.clash_type = "neutral"
+				# v0.9.3：玩家方 2:2 平衡时，所有 slot（包括被克/中立）都享受 +1，标记交给结算层应用
+				if player_balanced:
+					result.balanced_bonus = true
 			elif p_card != null and b_card == null:
 				# 玩家出牌，Boss 未出 → 毫无阻力，效果 ×2
 				result.player_card = p_card
@@ -81,6 +95,8 @@ static func resolve_clash(player_cards: Array[CardData], boss_cards: Array[CardD
 				result.player_multiplier = 2.0
 				result.boss_multiplier = 0.0
 				result.clash_type = "unopposed_player"
+				if player_balanced:
+					result.balanced_bonus = true
 			elif p_card == null and b_card != null:
 				# Boss 出牌，玩家未出 → 毫无阻力，效果 ×2
 				result.player_card = null

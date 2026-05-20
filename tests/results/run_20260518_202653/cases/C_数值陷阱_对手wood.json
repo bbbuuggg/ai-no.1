@@ -1,0 +1,250 @@
+{
+  "name": "C_数值陷阱_对手wood",
+  "scenario": "末 slot 数值陷阱：低伤克 4×1.5=6  vs  高伤同色 10×1.0=10，应选高伤同色",
+  "expected": "b_high_same",
+  "perception": {
+    "mode": "bp_slot_pick",
+    "self": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "energy": 6,
+      "base_energy": 6
+    },
+    "self_candidates": [
+      {
+        "index": 0,
+        "id": "b_low_fire",
+        "name": "低伤克_fire",
+        "type": "atk",
+        "element": "fire",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 4,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_current_opponent": {
+          "locked": true,
+          "opponent_element": "wood",
+          "multiplier": 1.5,
+          "my_base_damage": 4,
+          "my_actual_damage": 6,
+          "relation": "counters"
+        },
+        "counters_elements": [
+          {
+            "element": "wood",
+            "multiplier": 1.5
+          }
+        ],
+        "countered_by_elements": [
+          {
+            "element": "water",
+            "multiplier": 0.5
+          }
+        ],
+        "neutral_against": [
+          "fire",
+          "none"
+        ],
+        "relation_summary": "克 wood（×1.5）；被 water 克（×0.5）；中性 fire",
+        "vs_each_player_pick_candidate": [
+          {
+            "candidate_id": "p_lock",
+            "candidate_element": "wood",
+            "candidate_damage": 5,
+            "if_player_picks_this": {
+              "multiplier": 1.5,
+              "my_actual_damage": 6,
+              "relation": "counters"
+            }
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "id": "b_high_same",
+        "name": "高伤同色_wood",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 10,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_current_opponent": {
+          "locked": true,
+          "opponent_element": "wood",
+          "multiplier": 1.0,
+          "my_base_damage": 10,
+          "my_actual_damage": 10,
+          "relation": "neutral"
+        },
+        "counters_elements": [
+          {
+            "element": "water",
+            "multiplier": 1.5
+          }
+        ],
+        "countered_by_elements": [
+          {
+            "element": "fire",
+            "multiplier": 0.5
+          }
+        ],
+        "neutral_against": [
+          "wood",
+          "none"
+        ],
+        "relation_summary": "克 water（×1.5）；被 fire 克（×0.5）；中性 wood",
+        "vs_each_player_pick_candidate": [
+          {
+            "candidate_id": "p_lock",
+            "candidate_element": "wood",
+            "candidate_damage": 5,
+            "if_player_picks_this": {
+              "multiplier": 1.0,
+              "my_actual_damage": 10,
+              "relation": "neutral"
+            }
+          }
+        ]
+      }
+    ],
+    "self_picks": [
+      {
+        "slot": 1,
+        "locked": false
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "player": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "energy": 6,
+      "hand_count": 4
+    },
+    "player_candidates": [
+      {
+        "index": 0,
+        "id": "p_lock",
+        "name": "玩家锁定牌",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true
+      }
+    ],
+    "player_picks": [
+      {
+        "slot": 1,
+        "locked": false
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": true,
+        "id": "p_locked_4",
+        "name": "玩家slot4",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5
+      }
+    ],
+    "current_slot_matchup": {
+      "slot": 4,
+      "opponent_locked": true,
+      "opponent_element": "wood",
+      "opponent_polarity": "light",
+      "opponent_id": "p_locked_4",
+      "opponent_name": "玩家slot4",
+      "note": "你的 slot 4 只与对手的 slot 4 对位结算"
+    },
+    "current_slot": 3,
+    "current_slot_human": 4,
+    "slot_leader": "boss",
+    "slot_leader_is_self": true,
+    "first_picker": "boss",
+    "slots_total": 4,
+    "slots_left_including_current": 1,
+    "energy_remaining": 6,
+    "avg_energy_budget_per_slot": 6,
+    "skip_is_legal": true,
+    "opponent_locked_threat": 5,
+    "player_unlocked_threat_profile": [
+      {
+        "player_card": "p_lock",
+        "element": "wood",
+        "base_damage": 5,
+        "base_armor": 0,
+        "dmg_if_i_neutral": 5,
+        "dmg_if_i_countered": 8,
+        "dmg_if_i_counter": 2
+      }
+    ],
+    "rule_ai_suggestion": {
+      "cards": [],
+      "note": "无推荐"
+    },
+    "rules_summary": "克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×0.5同元素中立;⚠反向必错:不存在'水克木/木克火/火克水'",
+    "history": [],
+    "round": 1
+  },
+  "runs": [
+    {
+      "ok": true,
+      "card_id": "b_high_same",
+      "reasoning": "slot4已锁wood;预判玩家无选择;b_high_same同色×1.0=10伤优于b_low_fire×1.5=6伤,选高基础。",
+      "raw_content": "{\n  \"reasoning\": \"slot4已锁wood;预判玩家无选择;b_high_same同色×1.0=10伤优于b_low_fire×1.5=6伤,选高基础。\",\n  \"card_id\": \"b_high_same\"\n}",
+      "usage": {
+        "prompt_tokens": 6270,
+        "completion_tokens": 65,
+        "total_tokens": 6335,
+        "prompt_tokens_details": {
+          "cached_tokens": 4864
+        },
+        "prompt_cache_hit_tokens": 4864,
+        "prompt_cache_miss_tokens": 1406
+      },
+      "reasoning_check": {
+        "wrong_patterns": [],
+        "right_patterns": []
+      }
+    }
+  ],
+  "majority_pick": "b_high_same",
+  "passed": true
+}

@@ -1,0 +1,328 @@
+{
+  "name": "B_Edge2张_对手wood",
+  "scenario": "候选只剩被克牌+克制牌，必选克制 fire",
+  "expected": "b_good_fire",
+  "perception": {
+    "mode": "bp_slot_pick",
+    "self": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "hp_displayed": 25,
+      "armor_displayed": 0,
+      "energy": 6,
+      "base_energy": 6
+    },
+    "self_candidates": [
+      {
+        "index": 0,
+        "picked": true
+      },
+      {
+        "index": 1,
+        "id": "b_bad_water",
+        "name": "被克_water",
+        "type": "atk",
+        "element": "water",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 6,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_current_opponent": {
+          "locked": true,
+          "opponent_element": "wood",
+          "multiplier": 0.5,
+          "my_base_damage": 6,
+          "my_actual_damage": 3,
+          "relation": "countered_by",
+          "my_effective_heal": 0,
+          "my_heal_capped_by_room": false,
+          "my_effective_armor": 0,
+          "self_hp_after_this": 25,
+          "player_hp_after_this": 22,
+          "self_hp_before_clash": 25,
+          "self_hp_room_for_heal": 0,
+          "player_hp_before_clash": 25
+        },
+        "counters_elements": [
+          {
+            "element": "fire",
+            "multiplier": 1.5
+          }
+        ],
+        "countered_by_elements": [
+          {
+            "element": "wood",
+            "multiplier": 0.5
+          }
+        ],
+        "neutral_against": [
+          "water",
+          "none"
+        ],
+        "relation_summary": "克 fire（×1.5）；被 wood 克（×0.5）；中性 water",
+        "vs_each_player_pick_candidate": [
+          {
+            "candidate_id": "p_lock",
+            "candidate_element": "wood",
+            "candidate_damage": 5,
+            "if_player_picks_this": {
+              "multiplier": 0.5,
+              "my_actual_damage": 3,
+              "relation": "countered_by"
+            }
+          }
+        ],
+        "if_i_pick_this_now": {
+          "my_remaining_pool": [
+            "b_good_fire"
+          ],
+          "coverage_per_player_card": [
+            {
+              "player_card": "p_lock",
+              "best_in_remaining": {
+                "card": "b_good_fire",
+                "mult": 1.5,
+                "covered": true
+              }
+            }
+          ],
+          "uncovered_player_cards": [],
+          "covered_count": 1,
+          "uncovered_count": 0
+        }
+      },
+      {
+        "index": 2,
+        "id": "b_good_fire",
+        "name": "克_fire",
+        "type": "atk",
+        "element": "fire",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 5,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_current_opponent": {
+          "locked": true,
+          "opponent_element": "wood",
+          "multiplier": 1.5,
+          "my_base_damage": 5,
+          "my_actual_damage": 8,
+          "relation": "counters",
+          "my_effective_heal": 0,
+          "my_heal_capped_by_room": false,
+          "my_effective_armor": 0,
+          "self_hp_after_this": 25,
+          "player_hp_after_this": 17,
+          "self_hp_before_clash": 25,
+          "self_hp_room_for_heal": 0,
+          "player_hp_before_clash": 25
+        },
+        "counters_elements": [
+          {
+            "element": "wood",
+            "multiplier": 1.5
+          }
+        ],
+        "countered_by_elements": [
+          {
+            "element": "water",
+            "multiplier": 0.5
+          }
+        ],
+        "neutral_against": [
+          "fire",
+          "none"
+        ],
+        "relation_summary": "克 wood（×1.5）；被 water 克（×0.5）；中性 fire",
+        "vs_each_player_pick_candidate": [
+          {
+            "candidate_id": "p_lock",
+            "candidate_element": "wood",
+            "candidate_damage": 5,
+            "if_player_picks_this": {
+              "multiplier": 1.5,
+              "my_actual_damage": 8,
+              "relation": "counters"
+            }
+          }
+        ],
+        "if_i_pick_this_now": {
+          "my_remaining_pool": [
+            "b_bad_water"
+          ],
+          "coverage_per_player_card": [
+            {
+              "player_card": "p_lock",
+              "best_in_remaining": {
+                "card": "b_bad_water",
+                "mult": 0.5,
+                "covered": false
+              }
+            }
+          ],
+          "uncovered_player_cards": [
+            "p_lock"
+          ],
+          "covered_count": 0,
+          "uncovered_count": 1
+        }
+      },
+      {
+        "index": 3,
+        "picked": true
+      }
+    ],
+    "self_picks": [
+      {
+        "slot": 1,
+        "locked": false
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "player": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "hp_displayed": 25,
+      "armor_displayed": 0,
+      "energy": 6,
+      "hand_count": 4
+    },
+    "player_candidates": [
+      {
+        "index": 0,
+        "id": "p_lock",
+        "name": "玩家锁定牌",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true
+      }
+    ],
+    "player_picks": [
+      {
+        "slot": 1,
+        "locked": true,
+        "id": "p_locked_1",
+        "name": "玩家slot1",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "current_slot_matchup": {
+      "slot": 1,
+      "opponent_locked": true,
+      "opponent_element": "wood",
+      "opponent_polarity": "light",
+      "opponent_id": "p_locked_1",
+      "opponent_name": "玩家slot1",
+      "note": "你的 slot 1 只与对手的 slot 1 对位结算"
+    },
+    "current_slot": 0,
+    "current_slot_human": 1,
+    "slot_leader": "boss",
+    "slot_leader_is_self": true,
+    "first_picker": "boss",
+    "slots_total": 4,
+    "slots_left_including_current": 4,
+    "energy_remaining": 6,
+    "avg_energy_budget_per_slot": 1,
+    "skip_is_legal": true,
+    "opponent_locked_threat": 5,
+    "player_unlocked_threat_profile": [
+      {
+        "player_card": "p_lock",
+        "element": "wood",
+        "base_damage": 5,
+        "base_armor": 0,
+        "dmg_if_i_neutral": 5,
+        "dmg_if_i_countered": 8,
+        "dmg_if_i_counter": 2
+      }
+    ],
+    "pre_slot_outlook": {
+      "locked_slots_count": 0,
+      "current_slot_index": 0,
+      "self_hp_displayed": 25,
+      "self_hp_before_current_slot": 25,
+      "self_armor_before_current_slot": 0,
+      "self_hp_room_for_heal": 0,
+      "player_hp_displayed": 25,
+      "player_hp_before_current_slot": 25,
+      "details": [],
+      "summary": "slot 1 决策：尚无已锁 slot"
+    },
+    "rule_ai_suggestion": {
+      "cards": [],
+      "note": "无推荐"
+    },
+    "rules_summary": "克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×0.5同元素中立;⚠反向必错:不存在'水克木/木克火/火克水'",
+    "history": [],
+    "round": 1
+  },
+  "runs": [
+    {
+      "ok": true,
+      "card_id": "b_good_fire",
+      "reasoning": "对位已锁wood;我slot1出fire克wood×1.5=8伤,留water给后续slot覆盖。",
+      "raw_content": "{\"reasoning\": \"对位已锁wood;我slot1出fire克wood×1.5=8伤,留water给后续slot覆盖。\",\n\"card_id\": \"b_good_fire\"}",
+      "usage": {
+        "prompt_tokens": 7634,
+        "completion_tokens": 45,
+        "total_tokens": 7679,
+        "prompt_tokens_details": {
+          "cached_tokens": 5760
+        },
+        "prompt_cache_hit_tokens": 5760,
+        "prompt_cache_miss_tokens": 1874
+      },
+      "reasoning_check": {
+        "wrong_patterns": [],
+        "right_patterns": []
+      }
+    }
+  ],
+  "majority_pick": "b_good_fire",
+  "passed": true
+}

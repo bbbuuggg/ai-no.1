@@ -2,10 +2,12 @@ extends Control
 ## RewardScreen — GDD-08 升级阶段 UI（v0.8.2 简化版）
 ## 布局：上方 Boss 完整牌库 ｜ 中间 [左规则 + 4 张候选新牌 + 右规则] ｜ 下方玩家完整牌库
 ## 候选 = 4 张新卡（从全卡池随机），用来替换牌库中的任意一张
+## v0.9.4：候选区末位增加 ⭐ 自行设计按钮，打开 CustomCardDesigner 自调升级牌
 
 signal reward_completed()
 
 const CARD_UI_SCRIPT := preload("res://scripts/ui/card_ui.gd")
+const CUSTOM_DESIGNER_SCRIPT := preload("res://scripts/ui/custom_card_designer.gd")
 const DECK_CARD_SCALE: float = 0.7   # 牌库展示缩放（200x280 → 140x196）
 const CANDIDATE_CARD_SCALE: float = 0.85  # 候选牌缩放
 
@@ -17,6 +19,9 @@ var candidates: Array[CardData] = []         # 4 张新卡候选
 var self_pick: CardData = null
 var boss_pick: CardData = null
 var remaining_candidates: Array[CardData] = []
+
+# v0.9.4：玩家本回合是否已使用自调升级（用过 → MIRROR 不再有自调选项；未用 → MIRROR 也可自调）
+var _player_used_custom: bool = false
 
 # 引用
 var _run_state: RunState = null
@@ -37,6 +42,9 @@ var _step_indicator: Label
 var _banner: Label
 var _summary_panel: Control
 
+# v0.9.4：自调升级面板
+var _custom_designer: Control = null
+
 
 func _ready() -> void:
 	anchor_right = 1.0
@@ -44,6 +52,31 @@ func _ready() -> void:
 	visible = false
 	z_index = 90
 	_build_ui()
+	_build_custom_designer()
+
+
+func _build_custom_designer() -> void:
+	# v0.9.4 v3 嵌入式：把 designer 嵌入到候选区位置（与候选卡互斥显示）
+	# 而非独立全屏遮罩
+	_custom_designer = Control.new()
+	_custom_designer.set_script(CUSTOM_DESIGNER_SCRIPT)
+	# 让 designer 填满候选容器的同级位置 — 把它 add 到 _candidates_container 的父级
+	# 并紧跟 candidates_container 排列；切换 visible 即可"原地替换"显示
+	if _candidates_container != null and _candidates_container.get_parent() != null:
+		var center_vbox: Node = _candidates_container.get_parent()
+		center_vbox.add_child(_custom_designer)
+		# 让 designer 紧跟在 candidates_container 之后（排序相同位置）
+		var idx: int = _candidates_container.get_index() + 1
+		center_vbox.move_child(_custom_designer, idx)
+		_custom_designer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_custom_designer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		# v3 横向 3 列布局后，高度紧凑（只需容纳 3 行 dial + 顶部状态栏 + 预览）
+		_custom_designer.custom_minimum_size = Vector2(0, 320)
+	else:
+		# 兜底：直接挂 self
+		add_child(_custom_designer)
+	_custom_designer.card_built.connect(_on_custom_card_built)
+	_custom_designer.cancelled.connect(_on_custom_designer_cancelled)
 
 
 func _build_ui() -> void:
@@ -241,6 +274,7 @@ func activate(player_deck: Array[CardData], boss_deck: Array[CardData]) -> void:
 	boss_pick = null
 	remaining_candidates.clear()
 	_replace_side = ""
+	_player_used_custom = false  # v0.9.4：每次升级阶段重置
 
 	current_step = Step.CANDIDATES
 	visible = true
@@ -371,11 +405,195 @@ func _on_deck_card_clicked(deck_index: int, side: String) -> void:
 func _show_candidates() -> void:
 	_step_indicator.text = "升级阶段"
 	_banner.text = "4 张新卡候选 — 点击 1 张作为你的升级"
+	# v0.9.4 v3：确保 designer 隐藏 + 候选区显示
+	if _custom_designer != null:
+		_custom_designer.visible = false
+	_candidates_container.visible = true
 	_clear_candidates()
 	for i in range(candidates.size()):
 		var card: CardData = candidates[i]
 		var node := _create_candidate_card(card, i)
 		_candidates_container.add_child(node)
+
+	# v0.9.4：候选区末尾追加 ⭐ 自行设计按钮（仅在解锁条件下显示）
+	if _is_custom_card_unlocked():
+		var custom_btn := _create_custom_design_button()
+		_candidates_container.add_child(custom_btn)
+
+
+## v0.9.4：创建 ⭐ 自行设计按钮（与候选卡同尺寸 = 170×238，居中不拉伸）
+func _create_custom_design_button() -> Control:
+	var card_w: float = 200.0 * CANDIDATE_CARD_SCALE
+	var card_h: float = 280.0 * CANDIDATE_CARD_SCALE
+
+	# 用 Control wrapper 锁定尺寸（与 _create_candidate_card 保持一致）
+	# 否则 Button 直接放在 HBoxContainer 中会被拉伸
+	var wrapper := Control.new()
+	wrapper.custom_minimum_size = Vector2(card_w, card_h)
+	wrapper.size = Vector2(card_w, card_h)
+	wrapper.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	wrapper.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	var btn := Button.new()
+	btn.set_anchors_preset(Control.PRESET_FULL_RECT)
+	btn.text = "⭐\n\n自行设计\n\n协议\n调试器\n\n点击进入\n自由造牌"
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.add_theme_color_override("font_color", Color(0.0, 0.95, 1.0))
+	btn.add_theme_color_override("font_hover_color", Color(0.4, 1.0, 1.0))
+
+	# 自定义样式：紫色边框 + 全息感
+	var sb_normal := StyleBoxFlat.new()
+	sb_normal.bg_color = Color(0.08, 0.05, 0.15, 0.9)
+	sb_normal.border_color = Color(0.6, 0.4, 1.0, 0.8)
+	sb_normal.set_border_width_all(2)
+	sb_normal.set_corner_radius_all(6)
+	btn.add_theme_stylebox_override("normal", sb_normal)
+
+	var sb_hover := StyleBoxFlat.new()
+	sb_hover.bg_color = Color(0.12, 0.08, 0.22, 0.95)
+	sb_hover.border_color = Color(0.8, 0.6, 1.0, 1.0)
+	sb_hover.set_border_width_all(3)
+	sb_hover.set_corner_radius_all(6)
+	btn.add_theme_stylebox_override("hover", sb_hover)
+
+	btn.pressed.connect(_on_custom_design_clicked)
+	wrapper.add_child(btn)
+	return wrapper
+
+
+## v0.9.4：MIRROR 用 ⭐ 自行设计按钮（与玩家版同尺寸，副标题改为"为 MIRROR"）
+func _create_custom_design_button_for_boss() -> Control:
+	var card_w: float = 200.0 * CANDIDATE_CARD_SCALE
+	var card_h: float = 280.0 * CANDIDATE_CARD_SCALE
+
+	var wrapper := Control.new()
+	wrapper.custom_minimum_size = Vector2(card_w, card_h)
+	wrapper.size = Vector2(card_w, card_h)
+	wrapper.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	wrapper.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	var btn := Button.new()
+	btn.set_anchors_preset(Control.PRESET_FULL_RECT)
+	btn.text = "⭐\n\n为 MIRROR\n自行设计\n\n协议\n调试器\n\n点击进入"
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.add_theme_color_override("font_color", Color(1.0, 0.6, 0.6))   # MIRROR 红色调
+	btn.add_theme_color_override("font_hover_color", Color(1.0, 0.85, 0.85))
+
+	# 红紫边框（区别玩家版的蓝紫）
+	var sb_normal := StyleBoxFlat.new()
+	sb_normal.bg_color = Color(0.15, 0.05, 0.08, 0.9)
+	sb_normal.border_color = Color(1.0, 0.4, 0.5, 0.8)
+	sb_normal.set_border_width_all(2)
+	sb_normal.set_corner_radius_all(6)
+	btn.add_theme_stylebox_override("normal", sb_normal)
+
+	var sb_hover := StyleBoxFlat.new()
+	sb_hover.bg_color = Color(0.22, 0.08, 0.12, 0.95)
+	sb_hover.border_color = Color(1.0, 0.6, 0.7, 1.0)
+	sb_hover.set_border_width_all(3)
+	sb_hover.set_corner_radius_all(6)
+	btn.add_theme_stylebox_override("hover", sb_hover)
+
+	btn.pressed.connect(_on_custom_design_for_boss_clicked)
+	wrapper.add_child(btn)
+	return wrapper
+
+
+## v0.9.4：MIRROR 走自调流程入口
+func _on_custom_design_for_boss_clicked() -> void:
+	if _custom_designer == null:
+		return
+	var round_idx: int = 2
+	if _run_state != null:
+		round_idx = _run_state.round_index
+	var seq: int = 0
+	var card_db: Node = get_node_or_null("/root/CardDatabase")
+	if card_db != null and card_db.has_method("get_runtime_card_count"):
+		seq = card_db.get_runtime_card_count()
+	# 隐藏候选区 + 显示 designer
+	_candidates_container.visible = false
+	_banner.text = "为 MIRROR 自行设计 — 拨动数值后点击「确认构建」"
+	# 临时替换 designer 的回调（用 boss 路径），完成后再恢复
+	# 简化方案：用一次性连接 + 直接改 _on_custom_card_built 行为靠 current_step 区分
+	_custom_designer.open_designer(_player_deck, _boss_deck, round_idx, seq)
+
+
+## v0.9.4：自调升级解锁判定
+## TODO：未来接入 ConfigFile 持久化"完成过的 run 数"，目前简化为 victory_streak >= 1（每关都解锁）
+##       便于测试。后续按 Q3(b) 实现 2 周目解锁
+func _is_custom_card_unlocked() -> bool:
+	if _run_state == null:
+		return false
+	# 临时实现：当前 run 内连胜 >= 1（即至少打过一关 boss）就解锁自调
+	# 严格 2 周目实现需新增持久存档，留给后续迭代
+	return _run_state.victory_streak >= 1
+
+
+## v0.9.4：玩家点击 ⭐ 自行设计按钮
+func _on_custom_design_clicked() -> void:
+	if _custom_designer == null:
+		return
+	var round_idx: int = 2
+	if _run_state != null:
+		round_idx = _run_state.round_index
+	var seq: int = 0
+	var card_db: Node = get_node_or_null("/root/CardDatabase")
+	if card_db != null and card_db.has_method("get_runtime_card_count"):
+		seq = card_db.get_runtime_card_count()
+	# v3 嵌入式：隐藏候选区 + 显示 designer（同位置）
+	_candidates_container.visible = false
+	_banner.text = "自行设计升级牌 — 拨动数值后点击「确认构建」"
+	_custom_designer.open_designer(_player_deck, _boss_deck, round_idx, seq)
+
+
+## v0.9.4：玩家在 designer 内确认构建 → 注册到 CardDatabase + 进入"选我方牌替换"流程
+## v0.9.4 bugfix：保留原本 4 张候选作为 MIRROR pick 池（自调牌只用于玩家方互换）
+## v0.9.4 v5：current_step 区分玩家路径 / MIRROR 路径
+func _on_custom_card_built(card: CardData) -> void:
+	if card == null:
+		return
+	# 注册到 CardDatabase（让全系统可通过 get_card(id) 查询）
+	var card_db: Node = get_node_or_null("/root/CardDatabase")
+	if card_db != null and card_db.has_method("register_runtime_card"):
+		card_db.register_runtime_card(card)
+
+	# 恢复候选区可见性
+	_candidates_container.visible = true
+
+	# 根据当前 step 区分两条路径
+	if current_step == Step.PICK_FOR_BOSS:
+		# MIRROR 走自调路径：自调牌成为 boss_pick，进入"为 MIRROR 选要替换的牌"
+		boss_pick = card
+		_banner.text = "MIRROR 将获得「%s」→ 点击上方 MIRROR 牌库中要被替换的牌" % boss_pick.card_name
+		_replace_side = "boss"
+		_clear_candidates()
+		_refresh_deck_grids()
+	else:
+		# 玩家走自调路径：自调牌成为 self_pick
+		_player_used_custom = true
+		self_pick = card
+		# remaining_candidates = 原 4 张候选（MIRROR 之后从这 4 张选）
+		remaining_candidates.clear()
+		remaining_candidates.append_array(candidates)
+		current_step = Step.PICK_FOR_SELF
+		_step_indicator.text = "第 1 步 / 共 2 步"
+		_banner.text = "你将获得「%s」→ 点击下方我方牌库中要被替换的牌" % self_pick.card_name
+		_replace_side = "player"
+		_clear_candidates()
+		_refresh_deck_grids()
+
+
+## v0.9.4：玩家在 designer 内取消 → 回到 4 选 1 候选界面
+func _on_custom_designer_cancelled() -> void:
+	# v3 嵌入式：恢复候选区显示
+	_candidates_container.visible = true
+	# v0.9.4：根据当前 step 恢复正确的提示文案
+	if current_step == Step.PICK_FOR_BOSS:
+		_banner.text = "为 MIRROR 选 1 张新卡"
+	else:
+		_banner.text = "4 张新卡候选 — 点击 1 张作为你的升级"
 
 
 ## 用 CardUI 创建候选新卡（完整卡面，可点击，不变形不截断）
@@ -561,6 +779,12 @@ func _go_to_boss_pick_step() -> void:
 		var card: CardData = remaining_candidates[i]
 		var node := _create_candidate_card(card, i)
 		_candidates_container.add_child(node)
+
+	# v0.9.4：玩家本回合若未用自调（走的 4 选 1 路径），MIRROR 也可以走自调
+	# 玩家用过自调 → MIRROR 只能走 4 选 1（每回合各方至多用 1 次自调）
+	if not _player_used_custom and _is_custom_card_unlocked():
+		var custom_btn := _create_custom_design_button_for_boss()
+		_candidates_container.add_child(custom_btn)
 
 
 func _on_boss_pick(index: int) -> void:

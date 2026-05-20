@@ -1,0 +1,318 @@
+{
+  "name": "G_能量预算_对手water",
+  "scenario": "slot1 选 4费爆预算后剩 2 能量给 3slot → 应选 1费克制保节奏",
+  "expected": "b_low_cost",
+  "perception": {
+    "mode": "bp_slot_pick",
+    "self": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "hp_displayed": 25,
+      "armor_displayed": 0,
+      "energy": 6,
+      "base_energy": 6
+    },
+    "self_candidates": [
+      {
+        "index": 0,
+        "id": "b_high_cost",
+        "name": "高费爆预算",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "dark",
+        "cost": 4,
+        "dmg": 10,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 2,
+        "slots_left_after": 3,
+        "affordable_for_remaining": false,
+        "vs_current_opponent": {
+          "locked": true,
+          "opponent_element": "water",
+          "multiplier": 1.5,
+          "my_base_damage": 10,
+          "my_actual_damage": 15,
+          "relation": "counters",
+          "my_effective_heal": 0,
+          "my_heal_capped_by_room": false,
+          "my_effective_armor": 0,
+          "self_hp_after_this": 25,
+          "player_hp_after_this": 10,
+          "self_hp_before_clash": 25,
+          "self_hp_room_for_heal": 0,
+          "player_hp_before_clash": 25
+        },
+        "counters_elements": [
+          {
+            "element": "water",
+            "multiplier": 1.5
+          }
+        ],
+        "countered_by_elements": [
+          {
+            "element": "fire",
+            "multiplier": 0.5
+          }
+        ],
+        "neutral_against": [
+          "wood",
+          "none"
+        ],
+        "relation_summary": "克 water（×1.5）；被 fire 克（×0.5）；中性 wood",
+        "vs_each_player_pick_candidate": [
+          {
+            "candidate_id": "p_lock",
+            "candidate_element": "water",
+            "candidate_damage": 5,
+            "if_player_picks_this": {
+              "multiplier": 1.5,
+              "my_actual_damage": 15,
+              "relation": "counters"
+            }
+          }
+        ],
+        "if_i_pick_this_now": {
+          "my_remaining_pool": [
+            "b_low_cost"
+          ],
+          "coverage_per_player_card": [
+            {
+              "player_card": "p_lock",
+              "best_in_remaining": {
+                "card": "b_low_cost",
+                "mult": 1.5,
+                "covered": true
+              }
+            }
+          ],
+          "uncovered_player_cards": [],
+          "covered_count": 1,
+          "uncovered_count": 0
+        }
+      },
+      {
+        "index": 1,
+        "id": "b_low_cost",
+        "name": "低费克制",
+        "type": "atk",
+        "element": "wood",
+        "polarity": "dark",
+        "cost": 1,
+        "dmg": 5,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true,
+        "vs_current_opponent": {
+          "locked": true,
+          "opponent_element": "water",
+          "multiplier": 1.5,
+          "my_base_damage": 5,
+          "my_actual_damage": 8,
+          "relation": "counters",
+          "my_effective_heal": 0,
+          "my_heal_capped_by_room": false,
+          "my_effective_armor": 0,
+          "self_hp_after_this": 25,
+          "player_hp_after_this": 17,
+          "self_hp_before_clash": 25,
+          "self_hp_room_for_heal": 0,
+          "player_hp_before_clash": 25
+        },
+        "counters_elements": [
+          {
+            "element": "water",
+            "multiplier": 1.5
+          }
+        ],
+        "countered_by_elements": [
+          {
+            "element": "fire",
+            "multiplier": 0.5
+          }
+        ],
+        "neutral_against": [
+          "wood",
+          "none"
+        ],
+        "relation_summary": "克 water（×1.5）；被 fire 克（×0.5）；中性 wood",
+        "vs_each_player_pick_candidate": [
+          {
+            "candidate_id": "p_lock",
+            "candidate_element": "water",
+            "candidate_damage": 5,
+            "if_player_picks_this": {
+              "multiplier": 1.5,
+              "my_actual_damage": 8,
+              "relation": "counters"
+            }
+          }
+        ],
+        "if_i_pick_this_now": {
+          "my_remaining_pool": [
+            "b_high_cost"
+          ],
+          "coverage_per_player_card": [
+            {
+              "player_card": "p_lock",
+              "best_in_remaining": {
+                "card": "b_high_cost",
+                "mult": 1.5,
+                "covered": true
+              }
+            }
+          ],
+          "uncovered_player_cards": [],
+          "covered_count": 1,
+          "uncovered_count": 0
+        }
+      }
+    ],
+    "self_picks": [
+      {
+        "slot": 1,
+        "locked": false
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "player": {
+      "hp": 25,
+      "max_hp": 25,
+      "armor": 0,
+      "hp_displayed": 25,
+      "armor_displayed": 0,
+      "energy": 6,
+      "hand_count": 4
+    },
+    "player_candidates": [
+      {
+        "index": 0,
+        "id": "p_lock",
+        "name": "玩家锁定牌",
+        "type": "atk",
+        "element": "water",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5,
+        "armor": 0,
+        "heal": 0,
+        "energy_after_if_pick": 5,
+        "slots_left_after": 3,
+        "affordable_for_remaining": true
+      }
+    ],
+    "player_picks": [
+      {
+        "slot": 1,
+        "locked": true,
+        "id": "p_locked_1",
+        "name": "玩家slot1",
+        "type": "atk",
+        "element": "water",
+        "polarity": "light",
+        "cost": 1,
+        "dmg": 5
+      },
+      {
+        "slot": 2,
+        "locked": false
+      },
+      {
+        "slot": 3,
+        "locked": false
+      },
+      {
+        "slot": 4,
+        "locked": false
+      }
+    ],
+    "current_slot_matchup": {
+      "slot": 1,
+      "opponent_locked": true,
+      "opponent_element": "water",
+      "opponent_polarity": "light",
+      "opponent_id": "p_locked_1",
+      "opponent_name": "玩家slot1",
+      "note": "你的 slot 1 只与对手的 slot 1 对位结算"
+    },
+    "current_slot": 0,
+    "current_slot_human": 1,
+    "slot_leader": "boss",
+    "slot_leader_is_self": true,
+    "first_picker": "boss",
+    "slots_total": 4,
+    "slots_left_including_current": 4,
+    "energy_remaining": 6,
+    "avg_energy_budget_per_slot": 1,
+    "skip_is_legal": true,
+    "opponent_locked_threat": 5,
+    "player_unlocked_threat_profile": [
+      {
+        "player_card": "p_lock",
+        "element": "water",
+        "base_damage": 5,
+        "base_armor": 0,
+        "dmg_if_i_neutral": 5,
+        "dmg_if_i_countered": 8,
+        "dmg_if_i_counter": 2
+      }
+    ],
+    "pre_slot_outlook": {
+      "locked_slots_count": 0,
+      "current_slot_index": 0,
+      "self_hp_displayed": 25,
+      "self_hp_before_current_slot": 25,
+      "self_armor_before_current_slot": 0,
+      "self_hp_room_for_heal": 0,
+      "player_hp_displayed": 25,
+      "player_hp_before_current_slot": 25,
+      "details": [],
+      "summary": "slot 1 决策：尚无已锁 slot"
+    },
+    "rule_ai_suggestion": {
+      "cards": [],
+      "note": "无推荐"
+    },
+    "rules_summary": "克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×0.5同元素中立;⚠反向必错:不存在'水克木/木克火/火克水'",
+    "history": [],
+    "round": 1
+  },
+  "runs": [
+    {
+      "ok": true,
+      "card_id": "b_high_cost",
+      "reasoning": "对位slot1已锁water;我slot1出高费wood克water×1.5=15伤,后续slot2-4用低费wood覆盖,预算够。",
+      "raw_content": "{\n  \"reasoning\": \"对位slot1已锁water;我slot1出高费wood克water×1.5=15伤,后续slot2-4用低费wood覆盖,预算够。\",\n  \"card_id\": \"b_high_cost\"\n}",
+      "usage": {
+        "prompt_tokens": 7776,
+        "completion_tokens": 59,
+        "total_tokens": 7835,
+        "prompt_tokens_details": {
+          "cached_tokens": 5888
+        },
+        "prompt_cache_hit_tokens": 5888,
+        "prompt_cache_miss_tokens": 1888
+      },
+      "reasoning_check": {
+        "wrong_patterns": [],
+        "right_patterns": []
+      }
+    }
+  ],
+  "majority_pick": "b_high_cost",
+  "passed": []
+}

@@ -172,7 +172,9 @@ func _show_next_pair() -> void:
 	_show_clash_result(result)
 
 	# === 阶段5：结算停留 RESOLVE_DUR ===
-	await _wait(RESOLVE_DUR)
+	# v0.9.4：本对触发玩家 2:2 平衡 → 延长 0.8s 让玩家看清"⚡+1"脉冲（含金色文字 + 跳动）
+	var resolve_extra: float = 0.8 if result.balanced_bonus else 0.0
+	await _wait(RESOLVE_DUR + resolve_extra)
 
 	_current_index += 1
 	_show_next_pair()
@@ -203,7 +205,7 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 			# v0.3：弱化"克制!"文字 → 用 VS + 小字提示
 			versus_label.text = "VS"
 			versus_label.add_theme_color_override("font_color", COUNTER_PLAYER_COLOR)
-			multiplier_label_player.text = _format_calc(result.player_card, 1.5)
+			multiplier_label_player.text = _format_calc(result.player_card, 1.5, result.balanced_bonus)
 			multiplier_label_player.add_theme_color_override("font_color", COUNTER_PLAYER_COLOR)
 			multiplier_label_boss.text = _format_calc(result.boss_card, 0.5)
 			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
@@ -215,7 +217,7 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 		"counter_boss":
 			versus_label.text = "VS"
 			versus_label.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
-			multiplier_label_player.text = _format_calc(result.player_card, 0.5)
+			multiplier_label_player.text = _format_calc(result.player_card, 0.5, result.balanced_bonus)
 			multiplier_label_player.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
 			multiplier_label_boss.text = _format_calc(result.boss_card, 1.5)
 			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_PLAYER_COLOR)
@@ -226,7 +228,7 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 		"neutral":
 			versus_label.text = "VS"
 			versus_label.add_theme_color_override("font_color", NEUTRAL_COLOR)
-			multiplier_label_player.text = _format_calc(result.player_card, 1.0)
+			multiplier_label_player.text = _format_calc(result.player_card, 1.0, result.balanced_bonus)
 			multiplier_label_player.add_theme_color_override("font_color", NEUTRAL_COLOR)
 			multiplier_label_boss.text = _format_calc(result.boss_card, 1.0)
 			multiplier_label_boss.add_theme_color_override("font_color", NEUTRAL_COLOR)
@@ -234,7 +236,7 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 		"free_player":
 			versus_label.text = "无对手"
 			versus_label.add_theme_color_override("font_color", FREE_COLOR)
-			multiplier_label_player.text = _format_calc(result.player_card, 1.0) + " 直接生效"
+			multiplier_label_player.text = _format_calc(result.player_card, 1.0, result.balanced_bonus) + " 直接生效"
 			multiplier_label_player.add_theme_color_override("font_color", FREE_COLOR)
 			multiplier_label_boss.text = ""
 
@@ -248,7 +250,7 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 		"unopposed_player":
 			versus_label.text = "毫无阻力×2"
 			versus_label.add_theme_color_override("font_color", FREE_COLOR)
-			multiplier_label_player.text = _format_calc(result.player_card, 2.0) + " 毫无阻力×2"
+			multiplier_label_player.text = _format_calc(result.player_card, 2.0, result.balanced_bonus) + " 毫无阻力×2"
 			multiplier_label_player.add_theme_color_override("font_color", FREE_COLOR)
 			multiplier_label_boss.text = ""
 			_apply_counter_highlight(player_card_area)
@@ -262,6 +264,24 @@ func _show_clash_result(result: ClashResolver.ClashResult) -> void:
 			multiplier_label_boss.add_theme_color_override("font_color", COUNTER_BOSS_COLOR)
 			_apply_counter_highlight(boss_card_area)
 			_screen_shake()
+
+	# v0.9.4：玩家方 2:2 平衡触发 → 玩家计算式 Label 跳动金色脉冲，强化"⚡+1"可见度
+	if result.balanced_bonus and result.player_card != null:
+		_pulse_balanced_label(multiplier_label_player)
+
+
+## v0.9.4：平衡 +1 强调脉冲（金色 + 1.15 倍跳动 + 持续脉冲，让玩家清楚看到 ⚡+1）
+func _pulse_balanced_label(label: Label) -> void:
+	if label == null:
+		return
+	const GOLD := Color(1.0, 0.85, 0.3, 1.0)
+	# 字号瞬时放大 ×1.0 → ×1.18 → ×1.0，做 2 次脉冲
+	label.add_theme_color_override("font_color", GOLD)
+	label.pivot_offset = label.size * 0.5
+	var tw: Tween = label.create_tween().set_loops(2)
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(label, "scale", Vector2(1.18, 1.18), 0.30)
+	tw.tween_property(label, "scale", Vector2(1.0, 1.0), 0.30)
 
 
 ## 克制方视觉强化：金色边框模拟（modulate 偏金）+ 1.05× 缩放
@@ -325,28 +345,36 @@ func _flip_card(card_ui: Control) -> Tween:
 	return tween
 
 
-func _format_calc(card: CardData, multiplier: float) -> String:
+func _format_calc(card: CardData, multiplier: float, balanced_plus_one: bool = false) -> String:
 	## 生成 "数值 ×倍率 = 结果" 的计算式文本
 	## v0.3 §3.4 色弱兼容：在数值前加符号前缀（↓伤害 / ↑增益 / 🛡甲 / 🃏抽）
+	## v0.9.4：balanced_plus_one=true 时，倍率后追加 [color=#ffd84d]+1[/color] 平衡加成
+	##         返回值带 BBCode，调用方需用 RichTextLabel 才能正确显示颜色（这里 Label 也能容忍，
+	##         但金色 +1 会被去掉。为兼容已有 Label，用单色 emoji ⚡ 标记代替 BBCode。）
 	if card == null:
 		return ""
 	var base_value: int = 0
 	var value_type: String = ""
 	var prefix: String = ""
+	# v0.9.4：是否为受 +1 加成的字段类型（仅 dmg/armor/heal）
+	var plus_one_applies: bool = false
 	if card.damage > 0:
 		base_value = card.damage
 		value_type = "伤害"
 		prefix = "↓"
 		if card.hits > 1:
 			value_type = "伤害×%d" % card.hits
+		plus_one_applies = balanced_plus_one
 	elif card.armor > 0:
 		base_value = card.armor
 		value_type = "护甲"
 		prefix = "🛡"
+		plus_one_applies = balanced_plus_one
 	elif card.heal > 0:
 		base_value = card.heal
 		value_type = "回复"
 		prefix = "↑"
+		plus_one_applies = balanced_plus_one
 	elif card.draw_cards > 0:
 		base_value = card.draw_cards
 		value_type = "抽牌"
@@ -357,11 +385,20 @@ func _format_calc(card: CardData, multiplier: float) -> String:
 			return "效果减半 → 失效"
 		return "×%.1f" % multiplier
 
-	var final_value: int = ceili(float(base_value) * multiplier)
+	# v0.9.4：先按倍率算
+	var mid_value: int = ceili(float(base_value) * multiplier)
+	# 再按平衡 +1
+	var final_value: int = mid_value + (1 if plus_one_applies else 0)
 
 	if multiplier == 1.0:
+		if plus_one_applies:
+			# 1.0 倍率 + +1：直接 5 +1 = 6
+			return "%s%d ⚡+1 = %d %s" % [prefix, base_value, final_value, value_type]
 		return "%s%d %s" % [prefix, base_value, value_type]
 	else:
+		if plus_one_applies:
+			# 5 ×1.5 ⚡+1 = 9
+			return "%s%d ×%.1f ⚡+1 = %d %s" % [prefix, base_value, multiplier, final_value, value_type]
 		return "%s%d ×%.1f = %d %s" % [prefix, base_value, multiplier, final_value, value_type]
 
 

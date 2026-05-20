@@ -389,9 +389,9 @@ func _get_effect_lines() -> Array[String]:
 	if card_data.energy_next_turn > 0:
 		lines.append("下回合能量 +%d" % card_data.energy_next_turn)
 	if card_data.enemy_draw_modifier < 0:
-		lines.append("下一回合抽牌%d" % card_data.enemy_draw_modifier)
+		lines.append("对手下回合抽牌%d" % card_data.enemy_draw_modifier)
 	if card_data.enemy_energy_modifier < 0:
-		lines.append("下一回合能量%d" % card_data.enemy_energy_modifier)
+		lines.append("对手下回合能量%d" % card_data.enemy_energy_modifier)
 	if card_data.discard_hand_and_draw > 0:
 		lines.append("弃全部手牌抽 %d" % card_data.discard_hand_and_draw)
 	if card_data.gain_constraint_resource > 0:

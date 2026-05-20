@@ -77,6 +77,8 @@ var _pick_select_ui: PickSelectUI = null
 # GDD-08：互换动画 + 奖励界面（运行时构造）
 var _swap_animation: ColorRect = null
 var _reward_screen: Control = null
+# v0.8.3：失败界面（玩家死亡后显示击败次数 + "再来一次"）
+var _failure_screen: ColorRect = null
 
 
 func _ready() -> void:
@@ -220,15 +222,13 @@ func _open_player_deck() -> void:
 
 
 func _open_boss_deck() -> void:
-	# B 浮层：明确区分 DRAW / HAND / DEPLOYED 三个分区
-	# - DRAW 区：boss.deck（牌库剩余），显示类型分布横条 + 悬停精确数字
-	# - HAND 区：boss.hand 仅显示张数（内容暗，符合 GDD 04:78 信息对称原则）
-	# - DEPLOYED 区：boss.discard_pile（已结算的牌，含明出+暗出已翻）
-	boss_deck_view.show_boss_deck_with_zones(
-		battle.boss.deck,
-		battle.boss.hand.size(),
-		battle.boss.discard_pile,
-	)
+	# v0.9.3：BP 模式下 Boss 候选已完全公开（顶部 lane + pick_select_ui），无需信息对称占位
+	# 直接展示 Boss 完整 11 张牌库（抽牌+手牌+弃牌），与玩家牌库一致
+	var all_cards: Array[CardData] = []
+	all_cards.append_array(battle.boss.deck)
+	all_cards.append_array(battle.boss.hand)
+	all_cards.append_array(battle.boss.discard_pile)
+	boss_deck_view.show_boss_deck(all_cards)
 
 
 func _open_rules() -> void:
@@ -922,8 +922,7 @@ func _make_banner_style(accent: Color) -> StyleBoxFlat:
 # ===== 开发模式快捷键 =====
 
 func _input(event: InputEvent) -> void:
-	if not OS.is_debug_build():
-		return
+	# v0.9.3：保留导师 demo 用的调试快捷键（F1 秒杀 Boss / F2 秒杀玩家），即使 Release 包也启用
 	if event is InputEventKey and event.pressed:
 		# v0.4.3：洞察效果调试 — Ctrl+1/2/3（避免与 Godot 编辑器/系统占用的 F7-F9 冲突）
 		# 仅在 ctrl 真按下时触发；其他无修饰的 KEY_1 等正常字符输入不受影响。
@@ -945,6 +944,11 @@ func _input(event: InputEvent) -> void:
 			KEY_F1:
 				battle.debug_kill_boss()
 				_add_log("[DEBUG] F1 → Boss 秒杀")
+				get_viewport().set_input_as_handled()
+			KEY_F2:
+				# v0.8.3：玩家秒杀，触发失败结算页
+				battle.debug_kill_player()
+				_add_log("[DEBUG] F2 → 玩家秒杀（验证失败界面）")
 				get_viewport().set_input_as_handled()
 			KEY_F12:
 				battle.debug_kill_boss()
@@ -1217,6 +1221,14 @@ func _setup_progression_ui() -> void:
 
 	_reward_screen.reward_completed.connect(_on_reward_completed)
 
+	# v0.8.3：失败界面（默认隐藏，玩家死亡后激活）
+	_failure_screen = ColorRect.new()
+	_failure_screen.set_script(load("res://scripts/ui/failure_screen.gd"))
+	_failure_screen.name = "FailureScreen"
+	_failure_screen.visible = false
+	add_child(_failure_screen)
+	_failure_screen.restart_requested.connect(_on_failure_restart)
+
 
 ## 胜利后进入互换+升级流程
 func _on_battle_ended(player_won: bool) -> void:
@@ -1235,11 +1247,94 @@ func _on_battle_ended(player_won: bool) -> void:
 		else:
 			_add_log("[color=yellow][进度系统未加载，跳过互换+升级][/color]")
 	else:
-		_add_log("[color=red]✖ 失败... 系统重启 ✖[/color]")
+		_add_log("[color=red]✖ 失败... MIRROR 击溃了你 ✖[/color]")
 		var run_state_node: RunState = get_node_or_null("/root/RunState")
+		var streak: int = 0
 		if run_state_node != null:
-			run_state_node.run_ended.emit(false, run_state_node.victory_streak)
-			# TODO: 显示 FAILURE_END 结算页（Epic-08-I）
+			streak = run_state_node.victory_streak
+			run_state_node.run_ended.emit(false, streak)
+		# v0.8.3：显示失败结算页（隐藏战斗 UI，避免遮罩穿帮）
+		_show_failure_screen(streak)
+
+
+## v0.8.3：显示失败界面（隐藏战斗 UI + 弹出击败次数总结 + "再来一次"按钮）
+func _show_failure_screen(streak: int) -> void:
+	if _failure_screen == null:
+		_add_log("[color=#ff8866][FailureScreen 未加载][/color]")
+		return
+	# 隐藏战斗 UI（手牌、slot、日志、血条等），避免与失败页重叠
+	if _ui_root != null:
+		_ui_root.visible = false
+	_failure_screen.show_with_streak(streak)
+
+
+## v0.8.3：失败页"再来一次"回调 — 重置 RunState + 重启战斗
+func _on_failure_restart() -> void:
+	var run_state_node: RunState = get_node_or_null("/root/RunState")
+	if run_state_node != null:
+		run_state_node.reset_for_new_run()
+	# 隐藏失败页
+	if _failure_screen != null:
+		_failure_screen.visible = false
+	# 重新初始化战斗（用 R1 起始牌库 + R1 数值）
+	_full_run_restart()
+
+
+## v0.8.3：完整 Run 重启 — 用初始牌库重建 combatant（不沿用上局互换后的牌库）
+func _full_run_restart() -> void:
+	var card_db: Node = get_node("/root/CardDatabase")
+	var player_deck: Array[CardData] = card_db.get_player_starter_deck()
+	var boss_deck: Array[CardData] = card_db.get_boss_layer1_deck()
+
+	var run_state_node: RunState = get_node_or_null("/root/RunState")
+	var player_hp: int = 25
+	var boss_hp: int = 25
+	var base_energy: int = 6
+	if run_state_node != null:
+		player_hp = run_state_node.get_player_max_hp()
+		boss_hp = run_state_node.get_boss_max_hp()
+		base_energy = run_state_node.get_base_energy()
+
+	# 重建双方 combatant
+	battle.player.max_hp = player_hp
+	battle.player.hp = player_hp
+	battle.player.armor = 0
+	battle.player.base_energy = base_energy
+	battle.player.energy = base_energy
+	battle.player.full_deck = player_deck.duplicate()
+	battle.player.deck = player_deck.duplicate()
+	battle.player.deck.shuffle()
+	battle.player.discard_pile.clear()
+	battle.player.hand.clear()
+
+	battle.boss.max_hp = boss_hp
+	battle.boss.hp = boss_hp
+	battle.boss.armor = 0
+	battle.boss.base_energy = base_energy
+	battle.boss.energy = base_energy
+	battle.boss.full_deck = boss_deck.duplicate()
+	battle.boss.deck = boss_deck.duplicate()
+	battle.boss.deck.shuffle()
+	battle.boss.discard_pile.clear()
+	battle.boss.hand.clear()
+
+	# UI 重置
+	player_panel.setup("Player", player_hp, false)
+	boss_panel.setup("回响", boss_hp, true)
+	player_panel.set_max_energy(base_energy)
+	player_panel.set_energy(base_energy)
+	boss_panel.set_max_energy(base_energy)
+	boss_panel.set_energy(base_energy)
+	_player_prev_hp = player_hp
+	_boss_prev_hp = boss_hp
+
+	# 重启战斗
+	battle.start_battle(battle.player, battle.boss, [])
+	_add_log("[color=cyan]— 新 Run 开始 ·  Round 1 —[/color]")
+
+	# 恢复战斗 UI
+	if _ui_root != null:
+		_ui_root.visible = true
 
 
 ## 启动互换流程：动画 → 执行互换 → 打开 RewardScreen

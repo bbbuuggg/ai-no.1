@@ -75,10 +75,12 @@ static func count_polarity(cards: Array[CardData]) -> Dictionary:
 
 
 ## A2 协同奖励倍率：基础克制倍率 → 经过 2:2 平衡放大
-## 输入：基础倍率（1.5 / 0.5 / 1.0）+ 是否触发平衡
+## 输入：基础倍率（1.5 / 1.0）+ 是否触发平衡
 ## 输出：调整后倍率
 ##
-## 设计：仅放大正向克制倍率（1.5 → 2.0），不放大反向（0.5 不变，避免被克情况下还吃额外惩罚）
+## 历史设计（v0.9.3 之后已废弃）：仅放大正向克制倍率（1.5 → 2.0），不放大反向
+## 当前规则（v0.9.3）：2:2 平衡改为"倍率后非零字段 +1"（在 BlindClashBattle._resolve_card_with_multiplier 应用），不再放大倍率
+## v0.9.4 v5：被克方倍率从 0.5 改为 1.0（克制单边奖励），此函数注释保留作历史记录
 static func apply_balance_bonus(base_multiplier: float, balanced: bool) -> float:
 	if not balanced:
 		return base_multiplier

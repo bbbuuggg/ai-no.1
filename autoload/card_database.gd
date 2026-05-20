@@ -10,6 +10,10 @@ extends Node
 var all_cards: Dictionary = {}  # id -> CardData
 var all_traps: Dictionary = {}  # id -> TrapData
 
+# v0.9.4 自调升级牌：runtime 注册的 id 列表（每次 start_new_run 清理）
+# 用途：玩家在密码锁面板创造的自调牌（id="up_custom_r{N}_{seq}"）通过 register_runtime_card 注入
+var _runtime_card_ids: Array[StringName] = []
+
 
 func _ready() -> void:
 	_register_player_cards()
@@ -24,6 +28,32 @@ func _ready() -> void:
 
 func get_card(id: StringName) -> CardData:
 	return all_cards.get(id, null)
+
+
+## v0.9.4：注册一张运行时生成的卡（来自 CustomCardFactory 自调升级）
+## 调用方负责保证 id 唯一（建议用 up_custom_r{N}_{seq} 格式）
+func register_runtime_card(card: CardData) -> void:
+	if card == null or card.id == &"":
+		push_error("CardDatabase.register_runtime_card: card 或 id 无效")
+		return
+	if all_cards.has(card.id):
+		push_warning("CardDatabase.register_runtime_card: id 冲突 %s（覆盖）" % card.id)
+	all_cards[card.id] = card
+	if not _runtime_card_ids.has(card.id):
+		_runtime_card_ids.append(card.id)
+
+
+## v0.9.4：清理所有 runtime 注册的卡（开新 run 时调用，避免跨 run id 冲突）
+func clear_runtime_cards() -> void:
+	for id in _runtime_card_ids:
+		all_cards.erase(id)
+	_runtime_card_ids.clear()
+
+
+## v0.9.4：当前 runtime 注册的自调牌数量（供 RewardScreen 生成新 sequence id 用）
+func get_runtime_card_count() -> int:
+	return _runtime_card_ids.size()
+
 
 
 func get_player_starter_deck() -> Array[CardData]:

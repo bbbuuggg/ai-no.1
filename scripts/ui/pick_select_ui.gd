@@ -37,6 +37,7 @@ const SLOT_SPACING: float = SLOT_W + SLOT_GAP                 # 155
 # ===== 节点引用（_build_layout 中创建）=====
 var _battle: BlindClashBattle = null
 var _top_label: Label = null
+var _top_bg: PanelContainer = null  # v0.9.4：顶部提示条的深色背景板
 var _bottom_label: Label = null
 var _skip_button: Button = null
 
@@ -124,17 +125,34 @@ func _build_layout() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	# ===== 顶部提示条 =====
+	# v0.9.4：先建深色不透明背景板（避免与底部 pick 截断重叠时文字混乱）
+	_top_bg = PanelContainer.new()
+	_top_bg.name = "TopBannerBG"
+	_top_bg.position = Vector2(560, 6)         # 1920 居中：(1920-800)/2 = 560
+	_top_bg.size = Vector2(800, 48)            # 宽 800 足够容纳"回合 N · Slot M · 轮到 你 · 你 NN⚡  Boss NN⚡"
+	_top_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var top_bg_style := StyleBoxFlat.new()
+	top_bg_style.bg_color = Color(0.05, 0.06, 0.10, 0.92)   # 与先手横幅同色调，不透明
+	top_bg_style.border_color = Color(0.4, 0.6, 0.85, 0.85)
+	top_bg_style.set_border_width_all(2)
+	top_bg_style.set_corner_radius_all(8)
+	top_bg_style.content_margin_left = 16.0
+	top_bg_style.content_margin_right = 16.0
+	top_bg_style.content_margin_top = 6.0
+	top_bg_style.content_margin_bottom = 6.0
+	_top_bg.add_theme_stylebox_override("panel", top_bg_style)
+	add_child(_top_bg)
+
 	_top_label = Label.new()
 	_top_label.name = "TopBanner"
-	_top_label.position = Vector2(0, 12)
-	_top_label.size = Vector2(1920, 36)
 	_top_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_top_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_top_label.add_theme_font_size_override("font_size", 24)
 	_top_label.add_theme_color_override("font_color", Color(1, 1, 1))
 	_top_label.text = "等待 BP 阶段..."
 	_top_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_top_label)
+	# 作为背景板的子节点：自动随 PanelContainer 内边距居中
+	_top_bg.add_child(_top_label)
 
 	# ===== Boss 候选区（最上）=====
 	# 卡片缩放后宽 ~170，4 张总宽 ~680 + 30 gap → ~770，居中
@@ -379,6 +397,18 @@ func _on_bp_reveal_started(results: Array) -> void:
 	if _battle == null:
 		return  # deactivate 中止
 
+	# v0.9.4：检查本回合是否触发玩家光暗 2:2 平衡
+	# 若触发 → 中央横幅播报 ⚡ 平衡触发 → 等 1.5s → 再进翻盅动画
+	var balanced_triggered: bool = false
+	for r in results:
+		if r != null and r.balanced_bonus:
+			balanced_triggered = true
+			break
+	if balanced_triggered:
+		await _show_balanced_banner()
+		if _battle == null:
+			return
+
 	# === 信号链推进：进入 BP_RESOLVING（v0.3 §2.5.3 修正）===
 	# 必须在过渡完成后调用，确保 apply_cb 触发时 phase 正确
 	_battle.confirm_bp_reveal_done()
@@ -434,6 +464,99 @@ func _on_bp_resolve_completed() -> void:
 
 ## 入场过渡：黑幕渐入 + Pick UI 元素淡出 + 标题上升
 ## 总时长 TRANSITION_IN_DUR（1.0s），6 条并行子动画
+## v0.9.4：玩家光暗 2:2 平衡触发时，与"先手横幅"同形态的顶部居中播报
+##   - PanelContainer 720×110，y=180（与 FirstPickerBanner 完全一致的位置/形态）
+##   - 金色边框 + 阴影
+##   - 主标题 "⚡ 光暗平衡 ⚡"
+##   - 副标题 "每张牌 伤害 / 护甲 / 治疗 +1"
+##   - 淡入(0.3s) + 上滑 → 停留(1.4s) → 淡出(0.3s)，总 2.0s
+func _show_balanced_banner() -> void:
+	const ACCENT_GOLD := Color(1.0, 0.85, 0.3, 1.0)
+	const FADE_IN: float = 0.3
+	const HOLD: float = 1.4
+	const FADE_OUT: float = 0.3
+
+	# 容器：屏幕正中央
+	# v0.9.4 关键修复：必须挂到 PickSelectUI 的父级 UIRoot（与 FirstPickerBanner 同级）
+	# 而不是 add_child 到 self（PickSelectUI 内部 VBoxContainer 会接管 anchor 失效，落到左上角）
+	var banner := Control.new()
+	banner.name = "BalancedBanner"
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner.anchor_left = 0.5
+	banner.anchor_top = 0.5
+	banner.anchor_right = 0.5
+	banner.anchor_bottom = 0.5
+	banner.offset_left = -360.0
+	banner.offset_top = -55.0    # 720×110 居中：高度 110/2 = 55
+	banner.offset_right = 360.0
+	banner.offset_bottom = 55.0
+	banner.z_index = 200
+	banner.modulate.a = 0.0
+	# 挂到 UIRoot（与 FirstPickerBanner 同级）；若 parent 为空（极端情况）回退到 self
+	var ui_parent: Node = get_parent()
+	if ui_parent != null:
+		ui_parent.add_child(banner)
+	else:
+		add_child(banner)
+
+	# 主面板（金色边框 + 阴影，对齐 _make_banner_style）
+	var panel := PanelContainer.new()
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.05, 0.08, 0.94)
+	sb.border_color = ACCENT_GOLD
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(10)
+	sb.content_margin_left = 24.0
+	sb.content_margin_right = 24.0
+	sb.content_margin_top = 14.0
+	sb.content_margin_bottom = 14.0
+	sb.shadow_color = ACCENT_GOLD * Color(1, 1, 1, 0.5)
+	sb.shadow_size = 8
+	panel.add_theme_stylebox_override("panel", sb)
+	banner.add_child(panel)
+
+	# 内部 VBox：主标题 + 副标题
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(vbox)
+
+	var title_label := Label.new()
+	title_label.text = "⚡ 光暗平衡 ⚡"
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_label.add_theme_font_size_override("font_size", 42)
+	title_label.add_theme_color_override("font_color", ACCENT_GOLD)
+	vbox.add_child(title_label)
+
+	var sub_label := Label.new()
+	sub_label.text = "每张牌 伤害 / 护甲 / 治疗 效果 +1"
+	sub_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sub_label.add_theme_font_size_override("font_size", 18)
+	sub_label.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95, 1.0))
+	vbox.add_child(sub_label)
+
+	# 起始：透明 + 下偏 12px（淡入时上滑，对齐 FirstPickerBanner 风格）
+	banner.offset_top = -55.0 + 12.0
+	banner.offset_bottom = 55.0 + 12.0
+
+	var t := create_tween()
+	t.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(banner, "modulate:a", 1.0, FADE_IN)
+	t.parallel().tween_property(banner, "offset_top", -55.0, FADE_IN)
+	t.parallel().tween_property(banner, "offset_bottom", 55.0, FADE_IN)
+	t.tween_interval(HOLD)
+	t.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	t.tween_property(banner, "modulate:a", 0.0, FADE_OUT)
+
+	await t.finished
+	banner.queue_free()
+
+
 func _play_transition_in() -> void:
 	_ensure_backdrop()
 	# 创建/复用标题"翻盅"
@@ -479,6 +602,8 @@ func _play_transition_in() -> void:
 	# 5) 顶/底栏淡出
 	if _top_label != null:
 		tw.tween_property(_top_label, "modulate:a", 0.0, TRANSITION_IN_DUR * 0.5)
+	if _top_bg != null:
+		tw.tween_property(_top_bg, "modulate:a", 0.0, TRANSITION_IN_DUR * 0.5)
 	if _bottom_label != null:
 		tw.tween_property(_bottom_label, "modulate:a", 0.0, TRANSITION_IN_DUR * 0.5)
 
@@ -540,6 +665,8 @@ func _play_transition_out() -> void:
 	# 4) 顶/底栏淡入
 	if _top_label != null:
 		tw.tween_property(_top_label, "modulate:a", 1.0, TRANSITION_OUT_DUR * 0.5).set_delay(0.4)
+	if _top_bg != null:
+		tw.tween_property(_top_bg, "modulate:a", 1.0, TRANSITION_OUT_DUR * 0.5).set_delay(0.4)
 	if _bottom_label != null:
 		tw.tween_property(_bottom_label, "modulate:a", 1.0, TRANSITION_OUT_DUR * 0.5).set_delay(0.4)
 

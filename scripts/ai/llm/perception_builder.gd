@@ -40,7 +40,7 @@ extends RefCounted
 ##   "history": [
 ##     {"turn":3, "boss_played":["atk×2"], "player_typed":["atk","def"], "result":"draw"}
 ##   ],
-##   "rules_summary": "克制(主)：火克木 / 木克水 / 水克火 → 命中×1.5 被克×0.5；玩家方 4 张正好 2 光 2 暗 → 克制倍率 1.5 升 2.0",
+##   "rules_summary": "克制(主)：火克木 / 木克水 / 水克火 → 命中×1.5 被克×1.0 满数值；玩家方 4 张正好 2 光 2 暗 → 每张牌伤害/护甲/治疗各 +1",
 ##   "round": 4,
 ##   "energy_budget": 6,
 ##   "max_picks": 3
@@ -76,7 +76,7 @@ const POLARITY_SHORT := {
 
 ## 克制规则一句话提示（喂给 LLM 当作 system prompt 的"在线版"补强）
 ## 任何修改请同步 llm_boss_ai.gd 的两个 SYSTEM_PROMPT
-const _RULES_SUMMARY := "克制仅在同slot对位之间判定(你slot1只vs玩家slot1);克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×0.5同元素中立;⚠反向必错:不存在'水克木/木克火/火克水';协同：玩家方4张正好2光2暗→玩家克制倍率1.5升2.0;治疗满血=0(不溢出不保留);倍率作用于该牌全部数值（伤害/护甲/治疗/抽牌/能量）;毫无阻力:某slot一方出牌对方无能量跳过(对位为空)→出牌方全部效果×2;蛇形出牌(Snake Draft):偶数slot先手方先出奇数slot后手方先出→先手信息优劣势2:2平衡"
+const _RULES_SUMMARY := "克制仅在同slot对位之间判定(你slot1只vs玩家slot1);克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×1.0(v0.9.4 v5：被克方满数值不再×0.5减半,克制是单边奖励);⚠反向必错:不存在'水克木/木克火/火克水';协同：玩家方4张正好2光2暗→玩家每张牌结算时非零字段(伤害/护甲/治疗)在倍率后+1;治疗满血=0(不溢出不保留);倍率作用于该牌全部数值（伤害/护甲/治疗/抽牌/能量）;毫无阻力:某slot一方出牌对方无能量跳过(对位为空)→出牌方全部效果×2;蛇形出牌(Snake Draft):偶数slot先手方先出奇数slot后手方先出→先手信息优劣势2:2平衡"
 
 
 ## 主入口：构建一份感知
@@ -322,22 +322,80 @@ static func build_for_slot_pick(
 
 	# v0.8.2 方案 D-1：构建带"前瞻预算"派生字段的候选数组
 	# 每张未 Pick 的候选追加：energy_after_if_pick / slots_left_after / affordable_for_remaining
-	# v0.8.3：再追加 vs_opponent_*（精确克制倍率，避免 LLM 推理方向出错）
+	# v0.9.0：升级为"关系陈述视图"——杜绝 LLM 推理克制方向，给硬关系字段
 	var self_candidates_view: Array = _build_candidates_with_budget_outlook(
 		boss_candidates, current_slot, boss.energy
 	)
-	_inject_vs_opponent_multiplier(self_candidates_view, matchup, boss_candidates)
+	# 收集玩家未锁候选（用于 relation view + future slots view + threat profile）
+	var player_unlocked: Array = _collect_player_unlocked(player_candidates, player_picks)
+
+	# 关系陈述视图（每张候选）：
+	#   - vs_current_opponent.my_actual_damage （当前 slot 对位精确伤害）
+	#   - counters_elements / countered_by_elements / neutral_against / relation_summary
+	#   - vs_each_player_pick_candidate （后续 slot 风险预览）
+	_inject_relation_view(self_candidates_view, matchup, boss_candidates,
+						   player_candidates, player_picks)
+
+	# 全局视图（候选内）：
+	#   - if_i_pick_this_now.uncovered_player_cards （选这张后我剩余池能罩谁）
+	#   slot 4 跳过（后面没 slot）
+	_inject_future_slots_view(self_candidates_view, current_slot, boss_candidates, player_unlocked)
+
+	# 顶层威胁档位：玩家每张未锁候选的"中性/被克/克我"三档伤害
+	var threat_profile: Array = _build_player_unlocked_threat_profile(player_unlocked)
+
+	# v0.9.1：预结算前 N 个已锁 slot，得出当前 slot 翻盅时的真实 HP/护甲
+	# 解决 LLM 在 slot 4 决策治疗时\"看 self.hp 仍满血\"的盲点
+	var sim: Dictionary = _simulate_locked_slots_outcome(
+		boss_picks, player_picks, current_slot,
+		boss.hp, boss.max_hp, boss.armor,
+		player.hp, player.max_hp, player.armor
+	)
+	var hp_before_current: int = int(sim.get("self_hp", boss.hp))
+	var armor_before_current: int = int(sim.get("self_armor", boss.armor))
+	var p_hp_before_current: int = int(sim.get("player_hp", player.hp))
+	var p_armor_before_current: int = int(sim.get("player_armor", player.armor))
+	var room_for_heal: int = maxi(boss.max_hp - hp_before_current, 0)
+	var pre_slot_outlook: Dictionary = {
+		"locked_slots_count": current_slot,
+		"current_slot_index": current_slot,
+		"self_hp_before_current_slot": hp_before_current,
+		"self_armor_before_current_slot": armor_before_current,
+		"self_hp_room_for_heal": room_for_heal,
+		"player_hp_before_current_slot": p_hp_before_current,
+		"details": sim.get("details", []),
+		"summary": _build_pre_slot_summary(boss.hp, hp_before_current, player.hp, p_hp_before_current, current_slot),
+	}
+
+	# v0.9.1：把 pre_slot 的 hp_room_for_heal 注入每张候选的 vs_current_opponent
+	# 让 LLM 直接看到"我这张治疗牌的真实有效收益"（已 clamp）
+	_enrich_candidates_with_pre_slot(
+		self_candidates_view, hp_before_current, armor_before_current,
+		boss.max_hp, p_hp_before_current, player.max_hp
+	)
+
 	# 当前 slot 对位玩家牌的"威胁估值"（用于 LLM 判断是否值得 skip）
 	var opponent_threat: int = _compute_opponent_threat(matchup, player_picks, current_slot)
 	# Skip 战术合法性提示（恒为 true，但显式给 LLM 信号）
 	var skip_legal: bool = true
 
+	# v0.9.2：self / player 的 hp+armor 直接用模拟后的预测值
+	# 让 LLM 看到的就是\"slot N 翻盅时\"的真相，无需再去对比 pre_slot_outlook
+	# v0.9.3：删除 hp_displayed 字段（实测 LLM 看到两份 HP 仍会误信 displayed → 退化为\"满血\"幻觉）
+	var self_dict: Dictionary = _build_self(boss)
+	self_dict["hp"] = hp_before_current
+	self_dict["armor"] = armor_before_current
+
+	var player_dict: Dictionary = _build_player_view(player, [])  # BP 路径下 trap_slots 永远空
+	player_dict["hp"] = p_hp_before_current
+	player_dict["armor"] = p_armor_before_current
+
 	return {
 		"mode": "bp_slot_pick",
-		"self": _build_self(boss),
+		"self": self_dict,
 		"self_candidates": self_candidates_view,
 		"self_picks": _build_picks_summary(boss_picks),
-		"player": _build_player_view(player, []),  # BP 路径下 trap_slots 永远空
+		"player": player_dict,
 		"player_candidates": _build_candidates(player_candidates),
 		"player_picks": _build_picks_summary(player_picks),
 		"current_slot_matchup": matchup,
@@ -353,6 +411,10 @@ static func build_for_slot_pick(
 		# v0.8.2 方案 D-1 新增：留空合法性 + 对位威胁估值
 		"skip_is_legal": skip_legal,
 		"opponent_locked_threat": opponent_threat,
+		# v0.9.0 新增：玩家未锁候选三档伤害陈述（顶层）
+		"player_unlocked_threat_profile": threat_profile,
+		# v0.9.1 新增：前 N slot 翻盅后的预测 HP（治疗有效空间核心字段）
+		"pre_slot_outlook": pre_slot_outlook,
 		"rule_ai_suggestion": _build_rule_suggestion(rule_suggestion),
 		"progression": _build_progression(progression),
 		"rules_summary": _RULES_SUMMARY,
@@ -407,53 +469,478 @@ static func _compute_opponent_threat(matchup: Dictionary, player_picks: Array, c
 	return int(round(threat))
 
 
-## v0.8.3：给每张未 picked 候选注入精确的"vs 对位"克制倍率字段
-## 目的：杜绝 LLM 自己推理克制方向（实测会出现"wood 克 fire"反向幻觉）
-## 字段：
-##   - vs_opponent_element: "fire"/"water"/"wood"/"none"  对位玩家元素（matchup 未锁时为 "none"）
-##   - vs_opponent_multiplier: 0.5 / 1.0 / 1.5 / null      精确倍率（未锁时为 null）
-##   - vs_opponent_label: "克制"/"被克"/"中性"/"对位未锁"  人类可读
-static func _inject_vs_opponent_multiplier(candidates: Array, matchup: Dictionary,
-		boss_candidates: Array) -> void:
-	# 未锁场景：标记所有候选为"对位未锁"
-	if matchup == null or matchup.is_empty() or not bool(matchup.get("opponent_locked", false)):
-		for entry in candidates:
-			if entry.get("picked", false):
-				continue
-			entry["vs_opponent_element"] = "none"
-			entry["vs_opponent_multiplier"] = null
-			entry["vs_opponent_label"] = "对位未锁"
-		return
-
-	var opp_elem: String = String(matchup.get("opponent_element", "none"))
-	# 克制规则：FIRE→WOOD→WATER→FIRE
-	# 你出 X 对手出 Y → 倍率
-	var counter_map := {
-		"fire":  {"fire": 1.0, "water": 0.5, "wood": 1.5},
-		"water": {"fire": 1.5, "water": 1.0, "wood": 0.5},
-		"wood":  {"fire": 0.5, "water": 1.5, "wood": 1.0},
-	}
+## v0.9.0：候选注入"关系陈述"字段（替代 v0.8.3 扁平 vs_opponent_*）
+## 杜绝 LLM 推理克制方向（实测会出现"wood 克 fire"反向幻觉）
+## 给每张未 picked 候选注入：
+##   - vs_current_opponent: 当前 slot 对位的精确结算（含 my_actual_damage）
+##   - counters_elements / countered_by_elements / neutral_against: 静态克制全景
+##   - relation_summary: 一行摘要（LLM 复读防错）
+##   - vs_each_player_pick_candidate: 玩家未锁候选 → 倍率/伤害（后续 slot 风险预览）
+static func _inject_relation_view(candidates: Array, matchup: Dictionary,
+		boss_candidates: Array, player_candidates: Array,
+		player_picks: Array) -> void:
+	# 收集玩家未锁候选（用于 vs_each_player_pick_candidate）
+	var player_unlocked: Array = _collect_player_unlocked(player_candidates, player_picks)
 
 	for i in range(candidates.size()):
 		var entry: Dictionary = candidates[i]
 		if entry.get("picked", false):
 			continue
-		# 从 candidates 列表里直接读 element 字段（已经填好）
 		var self_elem: String = String(entry.get("element", "none"))
-		entry["vs_opponent_element"] = opp_elem
-		if self_elem == "none" or opp_elem == "none":
-			entry["vs_opponent_multiplier"] = 1.0
-			entry["vs_opponent_label"] = "中性（无元素）"
+		var base_dmg: int = int(entry.get("dmg", 0))
+
+		# === 1. 当前 slot 对位（已锁/未锁两态）===
+		entry["vs_current_opponent"] = _build_vs_current_opponent(matchup, self_elem, base_dmg)
+
+		# === 2. 静态克制全景（这张牌克谁、被谁克）===
+		var counter_info: Dictionary = _compute_counter_info(self_elem)
+		entry["counters_elements"] = counter_info["counters"]
+		entry["countered_by_elements"] = counter_info["countered_by"]
+		entry["neutral_against"] = counter_info["neutral"]
+		entry["relation_summary"] = counter_info["summary"]
+
+		# === 3. vs 玩家每张未锁候选（后续 slot 风险）===
+		entry["vs_each_player_pick_candidate"] = _build_vs_each_player_pick(
+			self_elem, base_dmg, player_unlocked
+		)
+
+
+## 收集玩家"未锁"候选（已锁的从 player_picks 排除）
+static func _collect_player_unlocked(player_candidates: Array, player_picks: Array) -> Array:
+	# 收集已锁牌的 id（从 player_picks 中读 .id）
+	var locked_ids: Dictionary = {}
+	for p in player_picks:
+		if p != null and p is CardData:
+			locked_ids[String(p.id)] = true
+
+	var unlocked: Array = []
+	for c in player_candidates:
+		if c == null:
 			continue
-		var mult: float = counter_map.get(self_elem, {}).get(opp_elem, 1.0)
-		entry["vs_opponent_multiplier"] = mult
-		match mult:
-			1.5:
-				entry["vs_opponent_label"] = "你克 ×1.5"
-			0.5:
-				entry["vs_opponent_label"] = "你被克 ×0.5"
-			_:
-				entry["vs_opponent_label"] = "同色 ×1.0"
+		if not (c is CardData):
+			continue
+		if locked_ids.has(String(c.id)):
+			continue  # 已锁的不算"未锁候选"
+		unlocked.append(c)
+	return unlocked
+
+
+## 计算"克制查表"结果
+## 返回 {counters: [...], countered_by: [...], neutral: [...], summary: "克 X；被 Y 克；中性 Z"}
+const _COUNTER_CHAIN := {
+	"fire":  {"counters": "wood",  "countered_by": "water"},
+	"water": {"counters": "fire",  "countered_by": "wood"},
+	"wood":  {"counters": "water", "countered_by": "fire"},
+}
+
+static func _compute_counter_info(self_elem: String) -> Dictionary:
+	if self_elem == "none" or not _COUNTER_CHAIN.has(self_elem):
+		return {
+			"counters": [],
+			"countered_by": [],
+			"neutral": ["fire", "water", "wood", "none"],
+			"summary": "中性牌：与所有元素均为 ×1.0，无克制关系",
+		}
+	var info = _COUNTER_CHAIN[self_elem]
+	var counters_elem: String = info["counters"]
+	var countered_by_elem: String = info["countered_by"]
+	return {
+		"counters": [{"element": counters_elem, "multiplier": 1.5}],
+		"countered_by": [{"element": countered_by_elem, "multiplier": 1.0}],
+		"neutral": [self_elem, "none"],
+		"summary": "克 %s（×1.5）；被 %s 克（×1.0 满数值，仅克方拿×1.5奖励）；中性 %s" % [
+			counters_elem, countered_by_elem, self_elem
+		],
+	}
+
+
+## 构建 vs_current_opponent：当前 slot 对位精确结算
+static func _build_vs_current_opponent(matchup: Dictionary, self_elem: String, base_dmg: int) -> Dictionary:
+	if matchup == null or matchup.is_empty() or not bool(matchup.get("opponent_locked", false)):
+		return {
+			"locked": false,
+			"note": "玩家在此 slot 未锁定，无法精确结算",
+		}
+	var opp_elem: String = String(matchup.get("opponent_element", "none"))
+	var mult: float = _compute_multiplier(self_elem, opp_elem)
+	var actual_dmg: int = ClashResolver.apply_multiplier_int(base_dmg, mult)
+	var relation: String = _relation_between(self_elem, opp_elem)
+	return {
+		"locked": true,
+		"opponent_element": opp_elem,
+		"multiplier": mult,
+		"my_base_damage": base_dmg,
+		"my_actual_damage": actual_dmg,
+		"relation": relation,
+	}
+
+
+## 构建 vs_each_player_pick_candidate：玩家未锁候选 → 我这张的对位结算
+static func _build_vs_each_player_pick(self_elem: String, base_dmg: int,
+		player_unlocked: Array) -> Array:
+	var arr: Array = []
+	for p_card in player_unlocked:
+		var p_elem: String = ELEMENT_SHORT.get(p_card.element, "none")
+		var mult: float = _compute_multiplier(self_elem, p_elem)
+		arr.append({
+			"candidate_id": String(p_card.id),
+			"candidate_element": p_elem,
+			"candidate_damage": p_card.damage,
+			"if_player_picks_this": {
+				"multiplier": mult,
+				"my_actual_damage": ClashResolver.apply_multiplier_int(base_dmg, mult),
+				"relation": _relation_between(self_elem, p_elem),
+			},
+		})
+	return arr
+
+
+## 倍率核心查表（counter_map）
+static func _compute_multiplier(self_elem: String, opp_elem: String) -> float:
+	if self_elem == "none" or opp_elem == "none":
+		return 1.0
+	var counter_map := {
+		"fire":  {"fire": 1.0, "water": 1.0, "wood": 1.5},
+		"water": {"fire": 1.5, "water": 1.0, "wood": 1.0},
+		"wood":  {"fire": 1.0, "water": 1.5, "wood": 1.0},
+	}
+	return float(counter_map.get(self_elem, {}).get(opp_elem, 1.0))
+
+
+## 元素关系枚举（counters / neutral / countered_by）
+## v0.9.4 v5：改用双元素直接判定（旧版靠倍率反推，新规则下被克=1.0 与中性=1.0 倍率相同无法区分）
+static func _relation_between(self_elem: String, opp_elem: String) -> String:
+	# 同元素或任一为 none → 中性
+	if self_elem == opp_elem or self_elem == "none" or opp_elem == "none":
+		return "neutral"
+	# 克制链：火→木→水→火
+	# 自己克对手：fire→wood / wood→water / water→fire
+	if (self_elem == "fire" and opp_elem == "wood") \
+			or (self_elem == "wood" and opp_elem == "water") \
+			or (self_elem == "water" and opp_elem == "fire"):
+		return "counters"
+	# 否则被克
+	return "countered_by"
+
+
+## 旧 API（已弃用，仅保留兼容性以防外部调用）— 在新规则下被克与中性倍率都是 1.0，无法可靠判定
+static func _multiplier_to_relation(mult: float) -> String:
+	if mult >= 1.5:
+		return "counters"
+	elif mult <= 0.5:
+		return "countered_by"
+	return "neutral"
+
+
+## v0.9.0：构建"玩家未锁候选威胁档位"顶层字段
+## 每张玩家未锁候选三档伤害陈述：
+##   - dmg_if_i_neutral: 我出中性元素时吃多少
+##   - dmg_if_i_countered: 我元素被它克时吃多少
+##   - dmg_if_i_counter: 我元素克它时吃多少
+static func _build_player_unlocked_threat_profile(player_unlocked: Array) -> Array:
+	var arr: Array = []
+	for p_card in player_unlocked:
+		var p_elem: String = ELEMENT_SHORT.get(p_card.element, "none")
+		var base_dmg: int = p_card.damage
+		var armor_threat: float = p_card.armor * 0.7  # 护甲间接计入威胁
+		var total_base: float = base_dmg + armor_threat
+		arr.append({
+			"player_card": String(p_card.id),
+			"element": p_elem,
+			"base_damage": base_dmg,
+			"base_armor": p_card.armor,
+			"dmg_if_i_neutral":   int(round(total_base * 1.0)),
+			"dmg_if_i_countered": int(round(total_base * 1.5)),
+			"dmg_if_i_counter":   int(round(total_base * 1.0)),
+		})
+	return arr
+
+
+## v0.9.0：候选内注入"机会成本视图" if_i_pick_this_now
+## 告诉 LLM：选这张后我剩余候选能否覆盖玩家未锁候选
+## slot 4（最后一个 slot）跳过此字段（后面没 slot 了，省 token）
+static func _inject_future_slots_view(candidates: Array, current_slot: int,
+		boss_candidates: Array, player_unlocked: Array) -> void:
+	# slot 4（current_slot=3）跳过：后面没 slot 待选
+	if current_slot >= 3:
+		return
+
+	for i in range(candidates.size()):
+		var entry: Dictionary = candidates[i]
+		if entry.get("picked", false):
+			continue
+		# 计算"如果我选 entry[i]，剩余候选池"
+		var my_remaining: Array = []
+		var my_remaining_ids: Array = []
+		for j in range(boss_candidates.size()):
+			if j == i:
+				continue  # 跳过当前选的这张
+			if j < candidates.size() and candidates[j].get("picked", false):
+				continue  # 跳过已 picked 位
+			var c = boss_candidates[j]
+			if c != null and c is CardData:
+				my_remaining.append(c)
+				my_remaining_ids.append(String(c.id))
+
+		# 对玩家每张未锁候选，找我剩余池中的最佳对位
+		var coverage: Array = []
+		var uncovered_ids: Array = []
+		for p_card in player_unlocked:
+			var p_elem: String = ELEMENT_SHORT.get(p_card.element, "none")
+			var best_card: CardData = null
+			var best_mult: float = -1.0
+			for my_card in my_remaining:
+				var my_elem: String = ELEMENT_SHORT.get(my_card.element, "none")
+				var mult: float = _compute_multiplier(my_elem, p_elem)
+				if mult > best_mult:
+					best_mult = mult
+					best_card = my_card
+			if best_card == null:
+				continue
+			var covered: bool = best_mult >= 1.0  # 至少中性才算"覆盖"
+			coverage.append({
+				"player_card": String(p_card.id),
+				"best_in_remaining": {
+					"card": String(best_card.id),
+					"mult": best_mult,
+					"covered": covered,
+				},
+			})
+			if not covered:
+				uncovered_ids.append(String(p_card.id))
+
+		entry["if_i_pick_this_now"] = {
+			"my_remaining_pool": my_remaining_ids,
+			"coverage_per_player_card": coverage,
+			"uncovered_player_cards": uncovered_ids,
+			"covered_count": coverage.size() - uncovered_ids.size(),
+			"uncovered_count": uncovered_ids.size(),
+		}
+
+
+## v0.9.1：模拟"前 N 个已锁 slot"翻盅后的双方 HP/护甲
+## 用于解决 LLM 在 slot 4 决策治疗时\"看 self.hp 仍满血\"的盲点
+## 复刻 ClashResolver.resolve_clash + BlindClashBattle._resolve_card_with_multiplier 关键逻辑：
+##   - 倍率：调 ClashResolver.resolve_clash 拿 multiplier（避免重复克制公式）
+##   - 应用：复刻\"伤害（先扣甲）/ 护甲叠加 / 治疗 clamp max_hp\"三件
+##   - 不复刻：抽牌（不影响 HP）/ 状态（charge）/ next_attack_bonus（slot 间不传递的简化）
+##   - 不复刻：reflect_damage（当前主代码也未实装）
+##
+## v0.9.3：预测玩家 2:2 平衡 +1 加成
+##   - 用\"玩家 picks 全 4 张\"判 2:2（包括未锁但已知的位置 — 当前 BP 模式玩家未锁时为 null）
+##   - 若已锁的 player 牌中能确定 2:2（4 张全锁），模拟时玩家方每个非零字段 +1
+##   - 部分已锁时无法预测，按无 +1 模拟（保守低估）
+##
+## @param boss_picks   长度 4 的数组，已锁 slot 为 CardData，未锁为 null
+## @param player_picks 同上
+## @param current_slot 当前要决策的 slot（仅 0..current_slot-1 视为已锁参与模拟）
+## @param boss_hp / boss_max_hp / boss_armor 等都是\"决策前\"的真实值
+## @return Dictionary {self_hp, self_armor, player_hp, player_armor, details: [...]}
+static func _simulate_locked_slots_outcome(
+		boss_picks: Array, player_picks: Array, current_slot: int,
+		boss_hp: int, boss_max_hp: int, boss_armor: int,
+		player_hp: int, player_max_hp: int, player_armor: int) -> Dictionary:
+	# 收集已锁 slot 的牌（仅 current_slot 之前的）
+	var locked_boss: Array[CardData] = []
+	var locked_player: Array[CardData] = []
+	for i in range(min(current_slot, 4)):
+		var b: CardData = boss_picks[i] if i < boss_picks.size() else null
+		var p: CardData = player_picks[i] if i < player_picks.size() else null
+		locked_boss.append(b)
+		locked_player.append(p)
+
+	# 初始化模拟变量（不修改真实 combatant）
+	var s_hp: int = boss_hp
+	var s_armor: int = boss_armor
+	var p_hp: int = player_hp
+	var p_armor: int = player_armor
+	var details: Array = []
+
+	if locked_boss.is_empty():
+		# 没有已锁 slot，直接返回当前状态
+		return {
+			"self_hp": s_hp, "self_armor": s_armor,
+			"player_hp": p_hp, "player_armor": p_armor,
+			"details": details,
+		}
+
+	# v0.9.3：判玩家 2:2 平衡（基于已锁的部分 + 全 4 张 player_picks 中已知 CardData 数量 == 4）
+	# - 当玩家 4 张全锁时，可精确判定 2:2 → 模拟应用 +1
+	# - 部分已锁时，is_balanced_polarity 在 ClashResolver 里只用部分牌算，必为 false（要求 light=2 dark=2 共4张）
+	# 所以这里直接使用 ClashResolver 的判定结果即可（结果中的 balanced_bonus 标记）
+	var results: Array = ClashResolver.resolve_clash(locked_player, locked_boss)
+
+	for i in range(results.size()):
+		var r: ClashResolver.ClashResult = results[i]
+		var slot_detail: Dictionary = {
+			"slot": i,
+			"self_hp_before": s_hp,
+			"player_hp_before": p_hp,
+		}
+
+		# 双方同步结算（先各自计算最终值，再同时应用，符合真实结算）
+		# Boss 牌效果（caster=boss, target=player）
+		var b_dmg_dealt: int = 0
+		var b_armor_gain: int = 0
+		var b_heal: int = 0
+		if r.boss_card != null and r.boss_multiplier > 0:
+			var bc: CardData = r.boss_card
+			var bm: float = r.boss_multiplier
+			if bc.damage > 0:
+				b_dmg_dealt = ClashResolver.apply_multiplier_int(bc.damage, bm)
+			if bc.armor > 0:
+				b_armor_gain = ClashResolver.apply_multiplier_int(bc.armor, bm)
+			if bc.heal > 0:
+				b_heal = ClashResolver.apply_multiplier_int(bc.heal, bm)
+
+		# Player 牌效果（v0.9.3：玩家方 2:2 平衡 → 倍率后非零字段 +1，由 r.balanced_bonus 标记）
+		var p_dmg_dealt: int = 0
+		var p_armor_gain: int = 0
+		var p_heal: int = 0
+		var p_ignore_armor: bool = false
+		if r.player_card != null and r.player_multiplier > 0:
+			var pc: CardData = r.player_card
+			var pm: float = r.player_multiplier
+			var p_balanced_plus: int = 1 if r.balanced_bonus else 0
+			if pc.damage > 0:
+				p_dmg_dealt = ClashResolver.apply_multiplier_int(pc.damage, pm) + p_balanced_plus
+				p_ignore_armor = pc.ignore_armor
+			if pc.armor > 0:
+				p_armor_gain = ClashResolver.apply_multiplier_int(pc.armor, pm) + p_balanced_plus
+			if pc.heal > 0:
+				p_heal = ClashResolver.apply_multiplier_int(pc.heal, pm) + p_balanced_plus
+
+		var b_ignore_armor: bool = (r.boss_card != null and r.boss_card.ignore_armor)
+
+		# 应用 boss 对 player 的伤害（先扣甲）
+		if p_dmg_dealt > 0:
+			var dmg_after_armor: int = p_dmg_dealt
+			if not b_ignore_armor and p_armor > 0:
+				var blocked: int = mini(p_armor, p_dmg_dealt)
+				p_armor -= blocked
+				dmg_after_armor -= blocked
+			pass  # 占位
+			p_hp = maxi(p_hp - dmg_after_armor, 0)
+
+		# 应用 player 对 boss 的伤害
+		if b_dmg_dealt > 0:
+			var dmg_after_armor2: int = b_dmg_dealt
+			if not p_ignore_armor and s_armor > 0:
+				var blocked2: int = mini(s_armor, b_dmg_dealt)
+				s_armor -= blocked2
+				dmg_after_armor2 -= blocked2
+			s_hp = maxi(s_hp - dmg_after_armor2, 0)
+
+		# 应用各自的护甲叠加
+		s_armor += b_armor_gain
+		p_armor += p_armor_gain
+
+		# 应用治疗（clamp max_hp）
+		if b_heal > 0:
+			s_hp = mini(s_hp + b_heal, boss_max_hp)
+		if p_heal > 0:
+			p_hp = mini(p_hp + p_heal, player_max_hp)
+
+		slot_detail["self_dmg_taken"] = slot_detail["self_hp_before"] - s_hp + b_heal  # 净伤害
+		slot_detail["player_dmg_taken"] = slot_detail["player_hp_before"] - p_hp + p_heal
+		slot_detail["self_hp_after"] = s_hp
+		slot_detail["player_hp_after"] = p_hp
+		details.append(slot_detail)
+
+	return {
+		"self_hp": s_hp, "self_armor": s_armor,
+		"player_hp": p_hp, "player_armor": p_armor,
+		"details": details,
+	}
+
+
+
+
+
+
+
+
+## v0.9.1：构建 pre_slot_outlook.summary 的人类可读句
+static func _build_pre_slot_summary(boss_hp_orig: int, boss_hp_now: int,
+		player_hp_orig: int, player_hp_now: int, current_slot: int) -> String:
+	if current_slot == 0:
+		return "slot 1 决策：尚无已锁 slot，HP 等于当前显示值"
+	var s_diff: int = boss_hp_orig - boss_hp_now
+	var p_diff: int = player_hp_orig - player_hp_now
+	var s_part: String
+	var p_part: String
+	if s_diff > 0:
+		s_part = "boss HP %d→%d（吃%d伤）" % [boss_hp_orig, boss_hp_now, s_diff]
+	elif s_diff < 0:
+		s_part = "boss HP %d→%d（治疗+%d）" % [boss_hp_orig, boss_hp_now, -s_diff]
+	else:
+		s_part = "boss HP %d 不变" % boss_hp_orig
+	if p_diff > 0:
+		p_part = "玩家 HP %d→%d（吃%d伤）" % [player_hp_orig, player_hp_now, p_diff]
+	elif p_diff < 0:
+		p_part = "玩家 HP %d→%d（治疗+%d）" % [player_hp_orig, player_hp_now, -p_diff]
+	else:
+		p_part = "玩家 HP %d 不变" % player_hp_orig
+	return "前 %d slot 锁定后：%s，%s" % [current_slot, s_part, p_part]
+
+
+## v0.9.1：把 pre_slot 的预测 HP/护甲注入候选的 vs_current_opponent
+## 给每张候选追加：
+##   - my_effective_heal: 治疗已应用倍率 + clamp 到 room_for_heal
+##   - my_heal_capped_by_room: 治疗是否被 room 限制（true=部分浪费）
+##   - self_hp_after_this: 选这张并 slot 翻盅后 boss 最终 HP（含治疗 / 护甲挡）
+##   - player_hp_after_this: 选这张后 player 最终 HP（斩杀判断用）
+##   - effective_armor_value: 护甲牌当前 slot 翻盅时的真实挡伤（基于对位牌的 base_dmg）
+static func _enrich_candidates_with_pre_slot(candidates: Array,
+		boss_hp_pre: int, boss_armor_pre: int, boss_max_hp: int,
+		player_hp_pre: int, player_max_hp: int) -> void:
+	var room: int = maxi(boss_max_hp - boss_hp_pre, 0)
+	for entry in candidates:
+		if entry.get("picked", false):
+			continue
+		var vs: Variant = entry.get("vs_current_opponent", null)
+		if vs == null or not (vs is Dictionary):
+			continue
+		var vs_dict: Dictionary = vs
+		if not bool(vs_dict.get("locked", false)):
+			# 未锁场景：仍写"决策前 HP"和 room，便于一致性
+			vs_dict["self_hp_before_clash"] = boss_hp_pre
+			vs_dict["self_hp_room_for_heal"] = room
+			continue
+
+		var mult: float = float(vs_dict.get("multiplier", 1.0))
+		var base_heal: int = int(entry.get("heal", 0))
+		var base_armor_card: int = int(entry.get("armor", 0))
+		var actual_dmg: int = int(vs_dict.get("my_actual_damage", 0))
+
+		# 治疗有效收益（应用倍率 + clamp）
+		var heal_after_mult: int = 0
+		if base_heal > 0:
+			heal_after_mult = ClashResolver.apply_multiplier_int(base_heal, mult)
+		var heal_capped: int = mini(heal_after_mult, room)
+		vs_dict["my_effective_heal"] = heal_capped
+		vs_dict["my_heal_capped_by_room"] = (heal_after_mult > heal_capped)
+
+		# 护甲有效价值（已应用倍率，仅信息字段，结算前是直接获得）
+		var armor_after_mult: int = 0
+		if base_armor_card > 0:
+			armor_after_mult = ClashResolver.apply_multiplier_int(base_armor_card, mult)
+		vs_dict["my_effective_armor"] = armor_after_mult
+
+		# 选这张并翻盅后的最终 HP 预测（简化版：只考虑这张牌的伤害+治疗，不考虑对位玩家牌反打 boss 的伤害）
+		# 备注：对位玩家牌的伤害已在 player_unlocked_threat_profile 给出，LLM 自行综合
+		var hp_after: int = boss_hp_pre + heal_capped
+		hp_after = mini(hp_after, boss_max_hp)
+		vs_dict["self_hp_after_this"] = hp_after
+
+		# 玩家承受这张牌的伤害后 HP（用于斩杀判断）
+		var p_hp_after: int = maxi(player_hp_pre - actual_dmg, 0)
+		vs_dict["player_hp_after_this"] = p_hp_after
+
+		# 公共字段
+		vs_dict["self_hp_before_clash"] = boss_hp_pre
+		vs_dict["self_hp_room_for_heal"] = room
+		vs_dict["player_hp_before_clash"] = player_hp_pre
 
 
 ## 蛇形出牌辅助：返回指定 slot 的"先出方"

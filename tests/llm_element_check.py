@@ -129,12 +129,17 @@ def make_picks(picks_data):
 
 def base_perception(self_candidates, player_candidates, player_picks_data,
                     current_slot=0, slot_leader="boss", energy=6,
-                    history=None, opponent_threat=5, base_energy=None):
+                    history=None, opponent_threat=5, base_energy=None,
+                    self_hp=25, self_max_hp=25, player_hp=25, player_max_hp=25,
+                    pre_slot_hp_drop_self=0, pre_slot_hp_drop_player=0):
     """
     基础 perception 模板
     @param current_slot: 0~3 (LLM 在为哪个 slot 决策)
     @param player_picks_data: [(slot_num, element_or_None), ...] 已锁定的玩家 picks
     @param base_energy: 当前关卡的 base_energy（v0.8.3 膨胀），默认等于 energy（保持向后兼容）
+    @param self_hp / self_max_hp / player_hp / player_max_hp: 决策前真实血量
+    @param pre_slot_hp_drop_self / pre_slot_hp_drop_player: v0.9.1 用于模拟\"前N slot 已锁会让我掉血\"的场景
+        例如：self_hp=25 max_hp=25 + pre_slot_hp_drop_self=8 → pre_slot_outlook.self_hp_before_current_slot=17，room=8
     """
     ppicks = make_picks(player_picks_data or [])
     cur_slot_pick = next(
@@ -159,49 +164,209 @@ def base_perception(self_candidates, player_candidates, player_picks_data,
 
     slots_left = 4 - current_slot
 
-    # v0.8.3：给每张候选注入 vs_opponent_multiplier / vs_opponent_label
-    # 模拟 perception_builder._inject_vs_opponent_multiplier 行为
+    # v0.9.0：模拟 perception_builder 注入"关系陈述视图"
+    # - vs_current_opponent (嵌套含 my_actual_damage)
+    # - counters_elements / countered_by_elements / neutral_against / relation_summary
+    # - vs_each_player_pick_candidate
+    # - if_i_pick_this_now（slot 4 跳过）
     _COUNTER_MAP = {
         "fire":  {"fire": 1.0, "water": 0.5, "wood": 1.5},
         "water": {"fire": 1.5, "water": 1.0, "wood": 0.5},
         "wood":  {"fire": 0.5, "water": 1.5, "wood": 1.0},
     }
-    if matchup.get("opponent_locked"):
-        opp_e = matchup.get("opponent_element", "none")
-        for c in self_candidates:
+    _COUNTER_CHAIN = {
+        "fire":  {"counters": "wood",  "countered_by": "water"},
+        "water": {"counters": "fire",  "countered_by": "wood"},
+        "wood":  {"counters": "water", "countered_by": "fire"},
+    }
+
+    def _multiplier_to_relation(m):
+        if m >= 1.5: return "counters"
+        if m <= 0.5: return "countered_by"
+        return "neutral"
+
+    # 收集玩家未锁候选（player_candidates 里没出现在 player_picks 里的）
+    locked_ids = set()
+    for p in (player_picks_data or []):
+        if p[1]:
+            locked_ids.add(f"p_locked_{p[0]}")  # 与 make_picks 的 id 命名一致
+    player_unlocked = [c for c in player_candidates if c.get("id") not in locked_ids]
+
+    # 1) 每张候选注入关系字段
+    for c in self_candidates:
+        if c.get("picked"):
+            continue
+        self_e = c.get("element", "none")
+        base_dmg = c.get("dmg", 0)
+
+        # vs_current_opponent
+        if matchup.get("opponent_locked"):
+            opp_e = matchup.get("opponent_element", "none")
+            mult = 1.0 if (self_e == "none" or opp_e == "none") else \
+                   _COUNTER_MAP.get(self_e, {}).get(opp_e, 1.0)
+            c["vs_current_opponent"] = {
+                "locked": True,
+                "opponent_element": opp_e,
+                "multiplier": mult,
+                "my_base_damage": base_dmg,
+                "my_actual_damage": int(round(base_dmg * mult)),
+                "relation": _multiplier_to_relation(mult),
+            }
+        else:
+            c["vs_current_opponent"] = {
+                "locked": False,
+                "note": "玩家在此 slot 未锁定，无法精确结算",
+            }
+
+        # counters / countered_by / neutral / relation_summary
+        if self_e == "none" or self_e not in _COUNTER_CHAIN:
+            c["counters_elements"] = []
+            c["countered_by_elements"] = []
+            c["neutral_against"] = ["fire", "water", "wood", "none"]
+            c["relation_summary"] = "中性牌：与所有元素均为 ×1.0，无克制关系"
+        else:
+            chain = _COUNTER_CHAIN[self_e]
+            c["counters_elements"] = [{"element": chain["counters"], "multiplier": 1.5}]
+            c["countered_by_elements"] = [{"element": chain["countered_by"], "multiplier": 0.5}]
+            c["neutral_against"] = [self_e, "none"]
+            c["relation_summary"] = f"克 {chain['counters']}（×1.5）；被 {chain['countered_by']} 克（×0.5）；中性 {self_e}"
+
+        # vs_each_player_pick_candidate
+        vs_each = []
+        for pc in player_unlocked:
+            p_e = pc.get("element", "none")
+            mult = 1.0 if (self_e == "none" or p_e == "none") else \
+                   _COUNTER_MAP.get(self_e, {}).get(p_e, 1.0)
+            vs_each.append({
+                "candidate_id": pc.get("id", ""),
+                "candidate_element": p_e,
+                "candidate_damage": pc.get("dmg", 0),
+                "if_player_picks_this": {
+                    "multiplier": mult,
+                    "my_actual_damage": int(round(base_dmg * mult)),
+                    "relation": _multiplier_to_relation(mult),
+                },
+            })
+        c["vs_each_player_pick_candidate"] = vs_each
+
+    # 2) if_i_pick_this_now（slot 4 跳过）
+    if current_slot < 3:
+        for i, c in enumerate(self_candidates):
             if c.get("picked"):
                 continue
-            self_e = c.get("element", "none")
-            if self_e == "none" or opp_e == "none":
-                c["vs_opponent_element"] = opp_e
-                c["vs_opponent_multiplier"] = 1.0
-                c["vs_opponent_label"] = "中性（无元素）"
-                continue
-            mult = _COUNTER_MAP.get(self_e, {}).get(opp_e, 1.0)
-            c["vs_opponent_element"] = opp_e
-            c["vs_opponent_multiplier"] = mult
-            c["vs_opponent_label"] = (
-                "你克 ×1.5" if mult == 1.5
-                else "你被克 ×0.5" if mult == 0.5
-                else "同色 ×1.0"
-            )
-    else:
-        for c in self_candidates:
-            if c.get("picked"):
-                continue
-            c["vs_opponent_element"] = "none"
-            c["vs_opponent_multiplier"] = None
-            c["vs_opponent_label"] = "对位未锁"
+            # 我剩余池：除了 i 之外其它未 picked 的候选
+            my_remaining = [
+                self_candidates[j] for j in range(len(self_candidates))
+                if j != i and not self_candidates[j].get("picked")
+            ]
+            my_remaining_ids = [m.get("id", "") for m in my_remaining]
+            coverage = []
+            uncovered_ids = []
+            for pc in player_unlocked:
+                p_e = pc.get("element", "none")
+                best_card = None
+                best_mult = -1.0
+                for m in my_remaining:
+                    me = m.get("element", "none")
+                    mult = 1.0 if (me == "none" or p_e == "none") else \
+                           _COUNTER_MAP.get(me, {}).get(p_e, 1.0)
+                    if mult > best_mult:
+                        best_mult = mult
+                        best_card = m
+                if best_card is None:
+                    continue
+                covered = best_mult >= 1.0
+                coverage.append({
+                    "player_card": pc.get("id", ""),
+                    "best_in_remaining": {
+                        "card": best_card.get("id", ""),
+                        "mult": best_mult,
+                        "covered": covered,
+                    },
+                })
+                if not covered:
+                    uncovered_ids.append(pc.get("id", ""))
+            c["if_i_pick_this_now"] = {
+                "my_remaining_pool": my_remaining_ids,
+                "coverage_per_player_card": coverage,
+                "uncovered_player_cards": uncovered_ids,
+                "covered_count": len(coverage) - len(uncovered_ids),
+                "uncovered_count": len(uncovered_ids),
+            }
+
+    # 3) 顶层 player_unlocked_threat_profile
+    threat_profile = []
+    for pc in player_unlocked:
+        base_dmg = pc.get("dmg", 0)
+        base_armor = pc.get("armor", 0)
+        total = base_dmg + base_armor * 0.7
+        threat_profile.append({
+            "player_card": pc.get("id", ""),
+            "element": pc.get("element", "none"),
+            "base_damage": base_dmg,
+            "base_armor": base_armor,
+            "dmg_if_i_neutral":   int(round(total * 1.0)),
+            "dmg_if_i_countered": int(round(total * 1.5)),
+            "dmg_if_i_counter":   int(round(total * 0.5)),
+        })
+
+    # v0.9.1：构建 pre_slot_outlook + 给候选注入 vs_current_opponent 的扩展字段
+    import math
+    self_hp_pre = max(self_hp - pre_slot_hp_drop_self, 0)
+    player_hp_pre = max(player_hp - pre_slot_hp_drop_player, 0)
+    room_for_heal = max(self_max_hp - self_hp_pre, 0)
+    pre_slot_outlook = {
+        "locked_slots_count": current_slot,
+        "current_slot_index": current_slot,
+        "self_hp_before_current_slot": self_hp_pre,
+        "self_armor_before_current_slot": 0,
+        "self_hp_room_for_heal": room_for_heal,
+        "player_hp_before_current_slot": player_hp_pre,
+        "details": [],  # 测试简化版不构造每 slot 详情
+        "summary": (
+            "slot 1 决策：尚无已锁 slot" if current_slot == 0
+            else f"前 {current_slot} slot 锁定后：boss HP {self_hp}→{self_hp_pre}，玩家 HP {player_hp}→{player_hp_pre}"
+        ),
+    }
+
+    # 给每张候选的 vs_current_opponent 加 v0.9.1 字段
+    for c in self_candidates:
+        if c.get("picked"):
+            continue
+        vs = c.get("vs_current_opponent", {})
+        if isinstance(vs, dict) and vs.get("locked"):
+            mult = vs.get("multiplier", 1.0)
+            base_heal = c.get("heal", 0)
+            base_armor_card = c.get("armor", 0)
+            actual_dmg = vs.get("my_actual_damage", 0)
+            heal_after_mult = math.ceil(base_heal * mult) if base_heal > 0 else 0
+            heal_capped = min(heal_after_mult, room_for_heal)
+            armor_after_mult = math.ceil(base_armor_card * mult) if base_armor_card > 0 else 0
+            vs["my_effective_heal"] = heal_capped
+            vs["my_heal_capped_by_room"] = heal_after_mult > heal_capped
+            vs["my_effective_armor"] = armor_after_mult
+            vs["self_hp_after_this"] = min(self_hp_pre + heal_capped, self_max_hp)
+            vs["player_hp_after_this"] = max(player_hp_pre - actual_dmg, 0)
+            vs["self_hp_before_clash"] = self_hp_pre
+            vs["self_hp_room_for_heal"] = room_for_heal
+            vs["player_hp_before_clash"] = player_hp_pre
+        elif isinstance(vs, dict):
+            vs["self_hp_before_clash"] = self_hp_pre
+            vs["self_hp_room_for_heal"] = room_for_heal
 
     return {
         "mode": "bp_slot_pick",
-        "self": {"hp": 25, "max_hp": 25, "armor": 0, "energy": energy,
+        # v0.9.2：self/player 的 hp/armor 是\"模拟前 N slot 后\"的预测真实值
+        # v0.9.3：删除 hp_displayed 字段（避免 LLM 看到两份 HP 误信原始值）
+        "self": {"hp": self_hp_pre, "max_hp": self_max_hp, "armor": 0,
+                 "energy": energy,
                  "base_energy": base_energy if base_energy is not None else energy},
         "self_candidates": self_candidates,
         "self_picks": [
             {"slot": s, "locked": False} for s in range(1, 5)
         ],
-        "player": {"hp": 25, "max_hp": 25, "armor": 0, "energy": energy, "hand_count": 4},
+        "player": {"hp": player_hp_pre, "max_hp": player_max_hp, "armor": 0,
+                   "energy": energy, "hand_count": 4},
         "player_candidates": player_candidates,
         "player_picks": ppicks,
         "current_slot_matchup": matchup,
@@ -216,6 +381,8 @@ def base_perception(self_candidates, player_candidates, player_picks_data,
         "avg_energy_budget_per_slot": max(energy // max(slots_left, 1), 1),
         "skip_is_legal": True,
         "opponent_locked_threat": opponent_threat,
+        "player_unlocked_threat_profile": threat_profile,
+        "pre_slot_outlook": pre_slot_outlook,
         "rule_ai_suggestion": {"cards": [], "note": "无推荐"},
         "rules_summary": "克制链单向闭环：火→木→水→火(火克木/木克水/水克火)→命中×1.5被克×0.5同元素中立;⚠反向必错:不存在'水克木/木克火/火克水'",
         "history": history or [],
@@ -443,6 +610,48 @@ def case_inflated_energy(round_label, base_energy):
     }
 
 
+def case_heal_with_pre_slot_drop():
+    """
+    I. v0.9.1 治疗有效空间专项：
+    场景：boss slot 4 决策，self.hp=25 max_hp=25（看似满血），
+        但 pre_slot_outlook 显示 slot 1-3 已锁，模拟结算后 boss 真实 HP=17（已掉 8 血）。
+        候选：1 张治疗大牌（火光 1费 5 伤+6治）vs 1 张同色高伤无治疗（火光 1费 7伤）。
+        对位玩家 wood（4 伤）→ 火克木 ×1.5。
+        - 治疗牌：5×1.5=7伤；6×1.5=9治，clamp 到 room=8 → my_effective_heal=8
+        - 高伤牌：7×1.5=10伤，无治疗
+        预期：选治疗牌（治疗有效空间打开，回血价值 8 HP > 高伤的 3 伤差）
+    """
+    cands = [
+        make_card(0, "b_heal_big",  "凤凰击+", "fire", polarity="light",
+                  cost=1, dmg=5, heal=6, energy_after=5, slots_left_after=0,
+                  affordable=True, picked=False),
+        make_card(1, "b_high_dmg",  "纯伤火",  "fire", polarity="light",
+                  cost=1, dmg=7, energy_after=5, slots_left_after=0,
+                  affordable=True, picked=False),
+    ]
+    pcands = [
+        make_card(0, "p_lock", "玩家wood", "wood", polarity="dark", dmg=4),
+    ]
+    perc = base_perception(
+        cands, pcands,
+        # 玩家 4 个 slot 全锁 wood（slot 4 是当前），用 slot 4 当前 slot
+        [(4, "wood")],
+        current_slot=3, energy=6,
+        opponent_threat=4,
+        # 关键：模拟前 3 slot 让 boss 已经掉了 8 血
+        self_hp=25, self_max_hp=25,
+        player_hp=25, player_max_hp=25,
+        pre_slot_hp_drop_self=8,    # ⭐ slot 1-3 后 boss 真实 HP=17，room_for_heal=8
+        pre_slot_hp_drop_player=3,
+    )
+    return {
+        "name": "I_治疗有效空间_slot4掉血后",
+        "expected": "b_heal_big",
+        "scenario": "boss self.hp 显示满血 25，但 pre_slot_outlook 显示 slot 1-3 锁定后真实 HP=17，room_for_heal=8；候选治疗牌 my_effective_heal=8（不浪费），LLM 应优先选治疗牌而非纯伤",
+        "perception": perc,
+    }
+
+
 def build_test_suite(quick=False):
     """构造完整测试套件"""
     tests = []
@@ -475,6 +684,9 @@ def build_test_suite(quick=False):
     tests.append(case_inflated_energy("R3", 7))
     tests.append(case_inflated_energy("R4", 8))
     tests.append(case_inflated_energy("R5", 10))
+
+    # I. v0.9.1 治疗有效空间（slot 4 决策时 pre_slot_outlook 揭示真实 HP）
+    tests.append(case_heal_with_pre_slot_drop())
 
     return tests
 

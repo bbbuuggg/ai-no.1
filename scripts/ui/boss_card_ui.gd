@@ -297,9 +297,9 @@ func _get_effect_lines() -> Array[String]:
 	if card_data.all_attack_bonus > 0:
 		lines.append("本回合攻击 +%d" % card_data.all_attack_bonus)
 	if card_data.enemy_draw_modifier < 0:
-		lines.append("下一回合抽牌%d" % card_data.enemy_draw_modifier)
+		lines.append("对手下回合抽牌%d" % card_data.enemy_draw_modifier)
 	if card_data.enemy_energy_modifier < 0:
-		lines.append("下一回合能量%d" % card_data.enemy_energy_modifier)
+		lines.append("对手下回合能量%d" % card_data.enemy_energy_modifier)
 	if lines.is_empty():
 		lines.append(card_data.description)
 	return lines
